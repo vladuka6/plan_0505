@@ -3,6 +3,28 @@
 =========================== */
 const LS_KEY = "planner_prototype_ua_v2_full";
 const THEME_KEY = "planner_theme_pref";
+const memoryStorage = {};
+function safeGet(key){
+  try{
+    return localStorage.getItem(key);
+  } catch{
+    return Object.prototype.hasOwnProperty.call(memoryStorage, key) ? memoryStorage[key] : null;
+  }
+}
+function safeSet(key, value){
+  try{
+    localStorage.setItem(key, value);
+  } catch{
+    memoryStorage[key] = String(value);
+  }
+}
+function safeRemove(key){
+  try{
+    localStorage.removeItem(key);
+  } catch{
+    delete memoryStorage[key];
+  }
+}
 
 function kyivNow(){
   const d = new Date();
@@ -55,7 +77,7 @@ function migrateState(st){
   return next;
 }
 function loadState(){
-  const raw = localStorage.getItem(LS_KEY);
+  const raw = safeGet(LS_KEY);
   if(!raw) return null;
   try{
     const parsed = JSON.parse(raw);
@@ -65,7 +87,7 @@ function loadState(){
   }
 }
 function saveState(st){
-  localStorage.setItem(LS_KEY, JSON.stringify(st));
+  safeSet(LS_KEY, JSON.stringify(st));
 }
 function nowIsoKyiv(){
   const d = kyivNow();
@@ -149,6 +171,16 @@ function fmtDate(d){
   if(!d) return "—";
   const [y,m,da] = d.split("-");
   return `${da}.${m}.${y}`;
+}
+function fmtDateShort(d){
+  if(!d) return "—";
+  const parts = fmtDate(d).split(".");
+  return `${parts[0]}.${parts[1]}`;
+}
+function deptShortLabel(dept){
+  if(!dept?.name) return "Особ.";
+  const m = dept.name.match(/№\s*\d+/);
+  return m ? m[0].replace(/\s+/g,"") : dept.name;
 }
 function shorten(s, max=70){
   s = (s || "").trim();
@@ -314,6 +346,172 @@ function genTaskCode(prefix){
   const next = (nums.length ? Math.max(...nums) : 0) + 1;
   return `${prefix}-${year}-${String(next).padStart(4,'0')}`;
 }
+function normalizeSheetName(name){
+  return (name || "Sheet")
+    .replace(/[\\\/\?\*\[\]\:]/g, " ")
+    .trim()
+    .slice(0,31) || "Sheet";
+}
+function xmlEsc(s){
+  return (s ?? "").toString()
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&apos;");
+}
+function toDateOnly(v){
+  if(!v) return null;
+  const str = String(v);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const m = str.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+function inRange(dateStr, from, to){
+  if(!dateStr) return false;
+  return dateStr >= from && dateStr <= to;
+}
+function taskInPeriod(task, from, to){
+  const check = [
+    toDateOnly(task.createdAt),
+    toDateOnly(task.updatedAt),
+    toDateOnly(task.startDate),
+  ].filter(Boolean);
+  return check.some(d=>inRange(d, from, to));
+}
+function taskTypeLabel(type){
+  if(type==="managerial") return "Управлінська";
+  if(type==="internal") return "Внутрішня";
+  if(type==="personal") return "Моя задача";
+  return type;
+}
+function taskExportRows(tasks){
+  return tasks.map(t=>{
+    const dept = t.departmentId ? getDeptById(t.departmentId)?.name : "Особисто";
+    const resp = getUserById(t.responsibleUserId)?.name || "";
+    const creator = getUserById(t.createdBy)?.name || t.createdBy || "";
+    return [
+      t.id,
+      t.title,
+      taskTypeLabel(t.type),
+      statusLabel(t.status),
+      dept || "",
+      resp,
+      t.priority || "",
+      t.startDate || "",
+      t.dueDate || "",
+      t.nextControlDate || "",
+      toDateOnly(t.updatedAt) || "",
+      creator,
+    ];
+  });
+}
+function buildWorksheetXml(name, header, rows){
+  const headerXml = `<Row>${header.map(h=>`<Cell ss:StyleID="header"><Data ss:Type="String">${xmlEsc(h)}</Data></Cell>`).join("")}</Row>`;
+  const rowsXml = rows.map(r=>`<Row>${r.map(v=>`<Cell><Data ss:Type="String">${xmlEsc(v)}</Data></Cell>`).join("")}</Row>`).join("");
+  return `<Worksheet ss:Name="${xmlEsc(normalizeSheetName(name))}"><Table>${headerXml}${rowsXml}</Table></Worksheet>`;
+}
+function buildTasksWorkbookXml(sheets){
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Bottom"/>
+   <Borders/>
+   <Font ss:FontName="Calibri" ss:Size="11"/>
+   <Interior/>
+   <NumberFormat/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="header">
+   <Font ss:Bold="1"/>
+   <Interior ss:Color="#DCE6F1" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+ ${sheets.join("\n")}
+</Workbook>`;
+}
+function downloadExcelXml(filename, xml){
+  const blob = new Blob(["\uFEFF"+xml], {type:"application/vnd.ms-excel;charset=utf-8;"});
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(href);
+}
+function openTasksExportDialog(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Експорт доступний тільки керівнику.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const today = kyivDateStr();
+  showSheet("Експорт задач у Excel", `
+    <div class="hint">Буде сформовано книгу Excel: вкладка <b>Загальні</b> + окрема вкладка по кожному відділу.</div>
+    <div class="row2">
+      <div class="field">
+        <label>Від дати</label>
+        <input id="expFrom" type="date" value="${addDays(today, -30)}" />
+      </div>
+      <div class="field">
+        <label>До дати</label>
+        <input id="expTo" type="date" value="${today}" />
+      </div>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="exportTasksExcelNow">⬇️ Завантажити Excel</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function exportTasksExcelNow(){
+  const from = document.getElementById("expFrom")?.value;
+  const to = document.getElementById("expTo")?.value;
+  if(!from || !to || from > to){
+    showSheet("Помилка", `<div class="hint">Перевір період: дата “Від” має бути не пізніше “До”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const visible = getVisibleTasksForUser(currentSessionUser()).filter(t=>taskInPeriod(t, from, to));
+  const header = ["Код","Назва","Тип","Статус","Відділ","Відповідальний","Пріоритет","Старт","Дедлайн","Контроль","Оновлено","Створив"];
+  const canUseXlsx = typeof XLSX !== "undefined" && XLSX.utils && XLSX.writeFile;
+  if(canUseXlsx){
+    const wb = XLSX.utils.book_new();
+    const addSheet = (name, rows)=>{
+      const data = [header, ...rows];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, normalizeSheetName(name));
+    };
+
+    addSheet("Загальні", taskExportRows(visible));
+    STATE.departments.forEach(d=>{
+      const deptTasks = visible.filter(t=>t.departmentId===d.id);
+      addSheet(d.name, taskExportRows(deptTasks));
+    });
+
+    XLSX.writeFile(wb, `tasks_${from}_${to}.xlsx`);
+    hideSheet();
+    return;
+  }
+
+  const sheets = [];
+  sheets.push(buildWorksheetXml("Загальні", header, taskExportRows(visible)));
+  STATE.departments.forEach(d=>{
+    const deptTasks = visible.filter(t=>t.departmentId===d.id);
+    sheets.push(buildWorksheetXml(d.name, header, taskExportRows(deptTasks)));
+  });
+  const xml = buildTasksWorkbookXml(sheets);
+  downloadExcelXml(`tasks_${from}_${to}.xml`, xml);
+  hideSheet();
+}
 
 /* ===========================
    REPORTS + SUMMARIES
@@ -386,6 +584,26 @@ function hideSheet(){
   modal.classList.remove("show");
   sheetBody.innerHTML = "";
 }
+let toastTimer = null;
+function ensureToastContainer(){
+  let el = document.getElementById("toastContainer");
+  if(el) return el;
+  el = document.createElement("div");
+  el.id = "toastContainer";
+  el.className = "toast-container";
+  document.body.appendChild(el);
+  return el;
+}
+function showToast(message, type="info"){
+  const box = ensureToastContainer();
+  box.innerHTML = `<div class="toast toast-${type}">${htmlesc(message)}</div>`;
+  box.classList.add("show");
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{
+    box.classList.remove("show");
+    box.innerHTML = "";
+  }, 1700);
+}
 
 /* ===========================
    ROUTING / UI
@@ -399,7 +617,7 @@ const ROUTES = {
   PROFILE: "profile",
 };
 function loadTheme(){
-  return localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
+  return safeGet(THEME_KEY) === "dark" ? "dark" : "light";
 }
 function applyTheme(theme){
   const dark = theme === "dark";
@@ -410,13 +628,15 @@ let UI = {
   route: ROUTES.LOGIN,
   tab: ROUTES.CONTROL,
   taskFilter: "активні",
+  taskDeptFilter: "all",
+  taskSearch: "",
   reportFilter: "сьогодні",
   reportsControlDate: null, // NEW
   theme: loadTheme(),
 };
 function toggleTheme(){
   UI.theme = UI.theme === "dark" ? "light" : "dark";
-  localStorage.setItem(THEME_KEY, UI.theme);
+  safeSet(THEME_KEY, UI.theme);
   applyTheme(UI.theme);
   render();
 }
@@ -465,6 +685,7 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
             </div>
           </div>
           <div class="top-actions">
+            <button class="iconbtn" data-action="openHelp" title="Довідка">❓</button>
             <button class="iconbtn" data-action="toggleTheme" title="${themeTitle}">${themeIcon}</button>
             <button class="iconbtn" data-action="goProfile" title="Профіль">👤</button>
           </div>
@@ -497,9 +718,8 @@ function renderTabs(tabs){
       ${tabs.map(t=>{
         const active = (UI.tab===t.key) ? "active" : "";
         return `
-          <div class="tab ${active}" data-action="setTab" data-arg1="${t.key}">
+          <div class="tab ${active}" data-action="setTab" data-arg1="${t.key}" data-label="${htmlesc(t.label)}" title="${htmlesc(t.label)}" aria-label="${htmlesc(t.label)}">
             <div class="ico">${t.ico}</div>
-            <div>${t.label}</div>
           </div>
         `;
       }).join("")}
@@ -526,6 +746,7 @@ function viewLogin(){
           </div>
           <div class="top-actions">
             <div class="pill mono">${kyivDateStr()}</div>
+            <button class="iconbtn" data-action="openHelp" title="Довідка">❓</button>
             <button class="iconbtn" data-action="toggleTheme" title="${themeTitle}">${themeIcon}</button>
           </div>
         </div>
@@ -582,7 +803,7 @@ function viewLogin(){
   });
 
   document.getElementById("btnReset").addEventListener("click", ()=>{
-    localStorage.removeItem(LS_KEY);
+    safeRemove(LS_KEY);
     STATE = seed();
     showSheet("Готово", `<div class="hint">Дані скинуто. Завантажено демо.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
   });
@@ -1295,6 +1516,20 @@ function openDeptSummary(summaryId){
    TASKS VIEW + ACTIONS
 =========================== */
 function setTaskFilter(k){ UI.taskFilter = k; render(); }
+function setTaskDeptFilter(k){ UI.taskDeptFilter = k; render(); }
+function toggleTaskScope(){
+  UI.taskDeptFilter = (UI.taskDeptFilter === "personal") ? "all" : "personal";
+  render();
+}
+function setTaskSearchFromInput(){
+  const input = document.getElementById("taskSearchInput");
+  UI.taskSearch = (input?.value || "").trim().toLowerCase();
+  render();
+}
+function clearTaskSearch(){
+  UI.taskSearch = "";
+  render();
+}
 
 function viewTasks(){
   if(!ensureLoggedIn()) return viewLogin();
@@ -1302,8 +1537,18 @@ function viewTasks(){
   const u = currentSessionUser();
   UI.tab = ROUTES.TASKS;
 
-  const tasks = getVisibleTasksForUser(u);
+  let tasks = getVisibleTasksForUser(u);
   const filter = UI.taskFilter;
+  const deptFilter = UI.taskDeptFilter || "all";
+  const taskSearch = UI.taskSearch || "";
+
+  if(u.role === "boss"){
+    if(deptFilter === "personal"){
+      tasks = tasks.filter(t=>t.type==="personal");
+    } else if(deptFilter !== "all"){
+      tasks = tasks.filter(t=>t.departmentId === deptFilter);
+    }
+  }
 
   const filtered = tasks.filter(t=>{
     if(filter==="активні") return t.status!=="закрито" && t.status!=="скасовано";
@@ -1313,6 +1558,12 @@ function viewTasks(){
     if(filter==="без_оновлень") return staleTask(t,7);
     if(filter==="закриті") return t.status==="закрито";
     return true;
+  }).filter(t=>{
+    if(!taskSearch) return true;
+    const dept = t.departmentId ? getDeptById(t.departmentId)?.name : "Особисто";
+    const resp = getUserById(t.responsibleUserId)?.name || "";
+    const hay = `${t.title} ${t.id} ${dept} ${resp}`.toLowerCase();
+    return hay.includes(taskSearch);
   }).sort((a,b)=>{
     const ar = (a.status==="очікує_підтвердження") ? 0 : 1;
     const br = (b.status==="очікує_підтвердження") ? 0 : 1;
@@ -1338,34 +1589,66 @@ function viewTasks(){
       <div class="chip ${filter==="закриті"?"active":""}" data-action="setTaskFilter" data-arg1="закриті">Закриті</div>
     </div>
   `;
+  const deptChips = (u.role==="boss") ? `
+    <div class="chips">
+      <div class="chip ${deptFilter==="all"?"active":""}" data-action="setTaskDeptFilter" data-arg1="all">Загальні</div>
+      <div class="chip ${deptFilter==="personal"?"active":""}" data-action="setTaskDeptFilter" data-arg1="personal">Мої</div>
+      ${STATE.departments.map(d=>{
+        const c = getVisibleTasksForUser(u).filter(t=>t.departmentId===d.id && t.type!=="personal").length;
+        const active = deptFilter===d.id ? "active" : "";
+        return `<div class="chip ${active}" data-action="setTaskDeptFilter" data-arg1="${d.id}">${htmlesc(d.name)} <span class="mono">${c}</span></div>`;
+      }).join("")}
+    </div>
+  ` : ``;
+  const searchUi = `
+    <div class="field" style="margin-top:10px;">
+      <label>Пошук задач</label>
+      <div class="row" style="gap:8px;">
+        <input id="taskSearchInput" type="text" value="${htmlesc(UI.taskSearch)}" placeholder="Назва / відділ / виконавець" data-change="setTaskSearchFromInput" />
+        ${UI.taskSearch ? `<button class="btn ghost" data-action="clearTaskSearch">Скинути</button>` : ``}
+      </div>
+    </div>
+    <div class="hint">Показано: <span class="mono">${filtered.length}</span> із <span class="mono">${tasks.length}</span></div>
+  `;
 
-  const list = filtered.length ? filtered.map(t=>{
+  const list = filtered.length ? filtered.map((t, idx)=>{
     const dept = t.departmentId ? getDeptById(t.departmentId) : null;
     const resp = getUserById(t.responsibleUserId);
-    const stBadge = `<span class="badge ${statusBadgeClass(t.status)}">${statusLabel(t.status)}</span>`;
-    const type = (t.type==="managerial") ? `<span class="badge b-blue">Управлінська</span>`
-              : (t.type==="internal") ? `<span class="badge">Внутрішня</span>`
-              : `<span class="badge b-violet">Моя задача</span>`;
-    const due = t.dueDate ? `<span class="pill mono">Дедлайн: ${fmtDate(t.dueDate)}</span>` : `<span class="pill">Без дедлайну</span>`;
-    const ctrl = t.nextControlDate ? `<span class="pill mono">Контроль: ${fmtDate(t.nextControlDate)}</span>` : `<span class="pill">Без контролю</span>`;
-    const over = isOverdue(t) ? `<span class="badge b-danger">🟠 Прострочено</span>` : "";
-    const ctrlNeed = needsControl(t) ? `<span class="badge b-warn">⏳ Контроль сьогодні</span>` : "";
+    const titleTypeClass = (t.type==="managerial")
+      ? "task-title-type-managerial"
+      : (t.type==="internal")
+        ? "task-title-type-internal"
+        : "task-title-type-personal";
+
+    const numbering = `${idx + 1}.`;
+
+    const typeMeta = (t.type==="managerial")
+      ? {cls:"token-type-managerial", label:"У"}
+      : (t.type==="internal")
+        ? {cls:"token-type-internal", label:"В"}
+        : {cls:"token-type-personal", label:"О"};
+    const dueShort = t.dueDate ? fmtDateShort(t.dueDate) : "—";
+    const ctrlShort = t.nextControlDate ? fmtDateShort(t.nextControlDate) : "—";
+    const overdueIcon = isOverdue(t) ? `<span class="task-token token-flag" title="Прострочено">🟠</span>` : "";
 
     return `
-      <div class="item">
+      <div class="item task-item">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
-            <div class="name"><span class="mono">${htmlesc(t.id)}</span> ${htmlesc(t.title)}</div>
-            <div class="sub">${type} ${stBadge} ${over} ${ctrlNeed}</div>
-            <div class="sub">
-              ${dept ? `<span class="pill">${htmlesc(dept.name)}</span>` : `<span class="pill">Особисто</span>`}
-              <span class="pill">${htmlesc(resp?.name ?? "")}${isActingHead(resp?.id) ? " (в.о.)" : ""}</span>
+            <div class="task-line">
+              <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${htmlesc(t.title)}</div>
+              <div class="task-meta">
+              <span class="task-token token-dept" title="${htmlesc(dept ? dept.name : "Особисто")}">${htmlesc(deptShortLabel(dept))}</span>
+              <span class="task-token token-user" title="${htmlesc(resp?.name ?? "")}${isActingHead(resp?.id) ? " (в.о.)" : ""}">👤</span>
+              <span class="task-token token-due" title="${t.dueDate ? `Дедлайн ${fmtDate(t.dueDate)}` : "Без дедлайну"}">⏱ ${dueShort}</span>
+              <span class="task-token token-ctrl" title="${t.nextControlDate ? `Контроль ${fmtDate(t.nextControlDate)}` : "Без контролю"}">🎯 ${ctrlShort}</span>
+              <span class="task-token ${typeMeta.cls}" title="Тип задачі">${typeMeta.label}</span>
+              ${overdueIcon}
+              </div>
             </div>
-            <div class="sub">${due} ${ctrl}</div>
           </div>
           <div class="pill">›</div>
         </div>
-        ${quickActionsForTask(u, t)}
       </div>
     `;
   }).join("") : `<div class="hint">Немає задач за цим фільтром.</div>`;
@@ -1374,10 +1657,15 @@ function viewTasks(){
     <div class="card">
       <div class="card-h">
         <div class="t">Задачі</div>
-        <span class="badge b-blue">${u.role==="boss" ? "Всі + мої" : "Мій відділ"}</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${u.role==="boss" ? `<button class="btn ghost" data-action="openTasksExportDialog">⬇️ Excel</button>` : ``}
+          ${u.role==="boss" ? `<button class="btn ghost" data-action="toggleTaskScope">${UI.taskDeptFilter==="personal" ? "Мої" : "Всі"}</button>` : `<span class="badge b-blue">Мій відділ</span>`}
+        </div>
       </div>
       <div class="card-b">
         ${chips}
+        ${deptChips}
+        ${searchUi}
         <div class="list">${list}</div>
       </div>
     </div>
@@ -1458,6 +1746,7 @@ function setTaskStatus(taskId, status){
   if(u.role==="boss"){
     updateTask(taskId, {status}, u.id, `Статус → ${statusLabel(status)}`);
     render();
+    showToast(`Статус оновлено: ${statusLabel(status)}`, "ok");
     return;
   }
 
@@ -1475,6 +1764,7 @@ function setTaskStatus(taskId, status){
   }
   updateTask(taskId, {status}, u.id, `Статус → ${statusLabel(status)}`);
   render();
+  showToast(`Статус оновлено: ${statusLabel(status)}`, "ok");
 }
 
 function setControlDate(taskId){
@@ -1511,6 +1801,7 @@ function applyControlDate(taskId){
   updateTask(taskId, {nextControlDate: d}, u.id, `Контроль → ${d ? fmtDate(d) : "без контролю"}`);
   hideSheet();
   render();
+  showToast(d ? `Контроль: ${fmtDate(d)}` : "Контроль прибрано", "info");
 }
 
 function openTask(taskId){
@@ -1532,50 +1823,36 @@ function openTask(taskId){
   const upd = STATE.taskUpdates.filter(x=>x.taskId===t.id).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,8);
 
   showSheet("Картка задачі", `
-    <div class="item" style="cursor:default;">
-      <div class="row">
-        <div>
-          <div class="name"><span class="mono">${htmlesc(t.id)}</span> ${htmlesc(t.title)}</div>
-          <div class="sub">
-            ${
-              t.type==="managerial" ? `<span class="badge b-blue">Управлінська</span>` :
-              t.type==="internal" ? `<span class="badge">Внутрішня</span>` :
-              `<span class="badge b-violet">Моя задача</span>`
-            }
-            <span class="badge ${statusBadgeClass(t.status)}">${statusLabel(t.status)}</span>
-            ${isOverdue(t) ? `<span class="badge b-danger">🟠 Прострочено</span>` : ``}
-            ${needsControl(t) ? `<span class="badge b-warn">⏳ Контроль сьогодні</span>` : ``}
-          </div>
-          <div class="sub">
-            ${dept ? `<span class="pill">${htmlesc(dept.name)}</span>` : `<span class="pill">Особисто</span>`}
-            <span class="pill">${htmlesc(resp?.name ?? "")}${isActingHead(resp?.id) ? " (в.о.)" : ""}</span>
-            <span class="pill">${htmlesc(t.priority)}</span>
-          </div>
-          <div class="sub">
-            ${t.dueDate ? `<span class="pill mono">Дедлайн: ${fmtDate(t.dueDate)}</span>` : `<span class="pill">Без дедлайну</span>`}
-            ${t.nextControlDate ? `<span class="pill mono">Контроль: ${fmtDate(t.nextControlDate)}</span>` : `<span class="pill">Без контролю</span>`}
-          </div>
+    <div class="item task-sheet-compact" style="cursor:default;">
+      <div class="name">${htmlesc(t.title)}</div>
+      <div class="sub">
+        ${
+          t.type==="managerial" ? `<span class="badge b-blue">Управлінська</span>` :
+          t.type==="internal" ? `<span class="badge">Внутрішня</span>` :
+          `<span class="badge b-violet">Моя задача</span>`
+        }
+        <span class="badge ${statusBadgeClass(t.status)}">${statusLabel(t.status)}</span>
+        ${isOverdue(t) ? `<span class="badge b-danger">🟠 Прострочено</span>` : ``}
+      </div>
+      <div class="task-meta">
+        <span class="task-token token-dept" title="Відділ">${htmlesc(dept ? deptShortLabel(dept) : "Особ.")}</span>
+        <span class="task-token token-user" title="Відповідальний">👤</span>
+        <span class="task-token token-due" title="${t.dueDate ? `Дедлайн ${fmtDate(t.dueDate)}` : "Без дедлайну"}">⏱ ${t.dueDate ? fmtDateShort(t.dueDate) : "—"}</span>
+        <span class="task-token token-ctrl" title="${t.nextControlDate ? `Контроль ${fmtDate(t.nextControlDate)}` : "Без контролю"}">🎯 ${t.nextControlDate ? fmtDateShort(t.nextControlDate) : "—"}</span>
+        <span class="task-token">${htmlesc(t.priority)}</span>
+      </div>
+      <details class="task-disclosure" ${upd.length ? "" : "open"}>
+        <summary>Оновлення (${upd.length})</summary>
+        <div class="hint">
+          ${upd.length ? upd.map(x=>{
+            const au = getUserById(x.authorUserId);
+            const who = au ? `${au.name}${isActingHead(au.id) ? " (в.о.)" : ""}` : "—";
+            return `• <span class="mono">${htmlesc(x.at)}</span> — <b>${htmlesc(who)}</b>: ${htmlesc(x.note || "")}`;
+          }).join("<br/>") : "Немає оновлень."}
         </div>
-      </div>
-
-      <div class="hint" style="margin-top:10px;">
-        <b>Опис:</b> ${htmlesc(t.description || "—")}
-      </div>
+      </details>
+      ${t.description ? `<div class="hint"><b>Опис:</b> ${htmlesc(t.description)}</div>` : ``}
     </div>
-
-    <div class="sep"></div>
-
-    <div class="item" style="cursor:default;">
-      <div class="row"><div class="name">Оновлення</div><span class="badge b-blue mono">${upd.length}</span></div>
-      <div class="hint" style="margin-top:10px;">
-        ${upd.length ? upd.map(x=>{
-          const au = getUserById(x.authorUserId);
-          const who = au ? `${au.name}${isActingHead(au.id) ? " (в.о.)" : ""}` : "—";
-          return `• <span class="mono">${htmlesc(x.at)}</span> — <b>${htmlesc(who)}</b>: ${htmlesc(x.note || "")}`;
-        }).join("<br/>") : "Немає оновлень."}
-      </div>
-    </div>
-
     <div class="sep"></div>
     ${quickActionsForTask(u, t) || `<button class="btn primary" data-action="hideSheet">Закрити</button>`}
   `);
@@ -2092,35 +2369,105 @@ function viewAnalytics(){
   UI.tab = ROUTES.ANALYTICS;
 
   const today = kyivDateStr();
-  const startWeek = addDays(today, -6);
+  const days = Array.from({length:7}, (_,i)=>addDays(today, -(6-i)));
+  const closeDateForTask = (task)=>{
+    const updates = STATE.taskUpdates
+      .filter(u=>u.taskId===task.id && u.status==="закрито")
+      .sort((a,b)=>b.at.localeCompare(a.at));
+    if(updates[0]) return toDateOnly(updates[0].at);
+    if(task.status==="закрито") return toDateOnly(task.updatedAt);
+    return null;
+  };
+  const weekClosed = days.map(d=>{
+    const count = STATE.tasks.filter(t=>closeDateForTask(t)===d).length;
+    return {date:d, count};
+  });
+  const maxClosed = Math.max(1, ...weekClosed.map(x=>x.count));
+
+  const closedDurations = STATE.tasks
+    .map(t=>{
+      const closeDate = closeDateForTask(t);
+      const startDate = toDateOnly(t.createdAt) || t.startDate;
+      if(!closeDate || !startDate) return null;
+      const daysToClose = dateDiffDays(startDate, closeDate);
+      if(daysToClose < 0) return null;
+      return {task:t, daysToClose};
+    })
+    .filter(Boolean);
+  const avgClose = closedDurations.length
+    ? (closedDurations.reduce((s,x)=>s+x.daysToClose, 0) / closedDurations.length).toFixed(1)
+    : "—";
+
+  const topProblems = STATE.tasks
+    .map(t=>{
+      const blockerUpdates = STATE.taskUpdates.filter(u=>u.taskId===t.id && (u.status==="блокер" || u.status==="очікування"));
+      return {task:t, count:blockerUpdates.length, last:blockerUpdates.sort((a,b)=>b.at.localeCompare(a.at))[0]};
+    })
+    .filter(x=>x.count>0)
+    .sort((a,b)=>b.count-a.count)
+    .slice(0,5);
+
+  const deptLoad = STATE.departments.map(d=>{
+    const deptTasks = STATE.tasks.filter(t=>t.departmentId===d.id);
+    const active = deptTasks.filter(t=>t.status!=="закрито" && t.status!=="скасовано").length;
+    const blockers = deptTasks.filter(t=>t.status==="блокер" || t.status==="очікування").length;
+    const overdue = deptTasks.filter(t=>isOverdue(t)).length;
+    return {dept:d, active, blockers, overdue};
+  });
+  const maxActive = Math.max(1, ...deptLoad.map(x=>x.active));
 
   const body = `
     <div class="card">
       <div class="card-h">
-        <div class="t">Аналітика (демо)</div>
-        <span class="badge b-blue">Тиждень</span>
+        <div class="t">Аналітика</div>
+        <span class="badge b-blue">Останні 7 днів</span>
       </div>
-      <div class="card-b">
-        <div class="hint">
-          Це спрощена аналітика для MVP. Далі можна додати графіки, топ проблем, середній час закриття, навантаження по відділах.
-        </div>
-        <div class="sep"></div>
-
-        <div class="item" style="cursor:default;">
-          <div class="row"><div class="name">Підсумки відділів (за тиждень)</div>
-            <span class="badge b-violet mono">${STATE.deptSummaries.filter(s=>s.summaryDate>=startWeek && s.summaryDate<=today).length}</span>
+      <div class="card-b analytics-grid">
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Графік закриття задач</div><span class="badge b-ok mono">${weekClosed.reduce((s,x)=>s+x.count,0)}</span></div>
+          <div class="hint">Скільки задач закрито по днях.</div>
+          <div class="analytics-bars">
+            ${weekClosed.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label mono">${fmtDate(x.date).slice(0,5)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/maxClosed)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.count}</div>
+              </div>
+            `).join("")}
           </div>
         </div>
 
-        <div class="item" style="cursor:default;">
-          <div class="row"><div class="name">Управлінські задачі: прострочені</div>
-            <span class="badge b-danger mono">${STATE.tasks.filter(t=>t.type==="managerial" && isOverdue(t)).length}</span>
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Середній час закриття</div><span class="badge b-violet mono">${avgClose}</span></div>
+          <div class="hint">Середня тривалість від створення до закриття (у днях).</div>
+        </div>
+
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Топ проблем</div><span class="badge b-warn mono">${topProblems.length}</span></div>
+          <div class="hint">
+            ${
+              topProblems.length
+                ? topProblems.map(x=>{
+                    const dept = x.task.departmentId ? getDeptById(x.task.departmentId)?.name : "Особисто";
+                    const note = x.last?.note ? ` — ${htmlesc(x.last.note).slice(0,80)}` : "";
+                    return `• <b>${htmlesc(x.task.title)}</b> (${htmlesc(dept || "")}) • ${x.count}${note}`;
+                  }).join("<br/>")
+                : "Немає активних блокерів."
+            }
           </div>
         </div>
 
-        <div class="item" style="cursor:default;">
-          <div class="row"><div class="name">Мої задачі: на контролі сьогодні</div>
-            <span class="badge b-warn mono">${STATE.tasks.filter(t=>t.type==="personal" && needsControl(t)).length}</span>
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Навантаження по відділах</div><span class="badge b-blue mono">${deptLoad.reduce((s,x)=>s+x.active,0)}</span></div>
+          <div class="analytics-bars">
+            ${deptLoad.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label">${htmlesc(x.dept.name)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.active/maxActive)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.active}</div>
+              </div>
+              <div class="hint" style="margin-top:2px;">⛔ ${x.blockers} • 🟠 ${x.overdue}</div>
+            `).join("")}
           </div>
         </div>
       </div>
@@ -2145,6 +2492,74 @@ function openTaskList(filterKey){
   UI.taskFilter = filterKey;
   render();
 }
+function openHelp(){
+  showSheet("Довідка користувача", `
+    <div class="item" style="cursor:default;">
+      <div class="name">Що це за програма</div>
+      <div class="hint">Планувальник задач, щоденних звітів і контролю виконання для керівника, начальників відділів і виконавців.</div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Основні екрани і логіка</div>
+      <div class="hint">
+        🧭 Контроль: що критично сьогодні (не здали звіт, блокери, задачі на підтвердження).<br/>
+        📝 Звіти: щоденні звіти виконавців та підсумки відділів.<br/>
+        📋 Задачі: постановка, виконання, фільтри по статусах і відділах.<br/>
+        📈 Аналітика: динаміка закриття, топ проблем, середній час закриття, навантаження відділів.
+      </div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Роль: Керівник (boss) — приклад дня</div>
+      <div class="hint">
+        1) Відкрий “Контроль” і перевір плитку “Очікує підтвердження”.<br/>
+        2) Перейди в “Задачі” → фільтр “Очікує підтвердження”.<br/>
+        3) Відкрий картку задачі, перевір оновлення, натисни “Підтвердити” або “Повернути”.<br/>
+        4) У “Аналітиці” оціни, де ростуть блокери і який відділ перевантажений.
+      </div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Роль: Начальник відділу (head) — приклад дня</div>
+      <div class="hint">
+        1) Отримай управлінську задачу від керівника.<br/>
+        2) Розбий роботу на внутрішні задачі для виконавців.<br/>
+        3) В кінці дня перевір “Люди/штат” (хто здав/не здав).<br/>
+        4) Подай підсумок відділу (3–5 речень) у вкладці “Контроль”.
+      </div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Роль: Виконавець — приклад дня</div>
+      <div class="hint">
+        1) Відкрий свої задачі, онови статус (в процесі/блокер).<br/>
+        2) Якщо є проблема — зафіксуй блокер у задачі та у щоденному звіті.<br/>
+        3) Подай щоденний звіт до 17:30, щоб не було позначки “ПІЗНО”.
+      </div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Аналітика: як читати</div>
+      <div class="hint">
+        Графік закриття: якщо падає 2–3 дні поспіль — відділ “застряг”.<br/>
+        Топ проблем: задачі, що найчастіше переходили в блокер/очікування.<br/>
+        Середній час закриття: орієнтир швидкості виконання.<br/>
+        Навантаження відділів: порівняння активних задач + блокерів/прострочених.
+      </div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Експорт у Excel</div>
+      <div class="hint">
+        У “Задачах” натисни ⬇️ Excel, обери період і завантаж файл.<br/>
+        Книга містить вкладку “Загальні” і окремі вкладки по відділах.
+      </div>
+    </div>
+
+    <div class="sep"></div>
+    <button class="btn primary" data-action="hideSheet">Зрозуміло</button>
+  `);
+}
 
 const ACTIONS = {
   applyControlDate,
@@ -2155,6 +2570,7 @@ const ACTIONS = {
   hideSheet,
   logout,
   openAbout,
+  openHelp,
   openCreateTask,
   openDelegationCreate,
   openDelegations,
@@ -2165,20 +2581,26 @@ const ACTIONS = {
   openMissing,
   openReport,
   openReportForm,
+  openTasksExportDialog,
   openTask,
   openTaskList,
+  toggleTaskScope,
+  clearTaskSearch,
   setControlDate,
+  setTaskDeptFilter,
   setReportFilter,
   setTab,
   setTaskFilter,
   setTaskStatus,
   submitDeptSummaryNow,
   submitReportNow,
+  exportTasksExcelNow,
   toggleTheme,
 };
 const CHANGE_ACTIONS = {
   refreshDelPeople,
   refreshRespOptions,
+  setTaskSearchFromInput,
   setReportsControlDateFromInput,
   toggleNoDue,
 };
