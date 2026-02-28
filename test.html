@@ -1,0 +1,2420 @@
+<!--
+MOBILE-FIRST PROTOTYPE (LOCALSTORAGE) — UA ONLY (FULL UPDATED CODE)
+Оновлення (на твоє прохання “№1 + повний код”):
+✅ Керівник у вкладці “Звіти” бачить “Хто не здав” по відділах на обрану дату
+✅ Кнопка “👥 Люди” відкриває список людей відділу на цю дату (вчасно/пізно/не здав)
+✅ Збереження обраної дати контролю у UI (UI.reportsControlDate)
+
+Також збережено попередні вимоги:
+✅ Люди/штат у начальника: хто здав/не здав сьогодні
+✅ Підсумок відділу (кнопка для начальника/в.о.)
+✅ Всі назви українською
+✅ Задачі керівника (“Моя задача”), задачі без дедлайну + контрольна дата
+✅ Заміщення (в.о.) — призначає тільки керівник
+
+HOW TO USE
+1) Save as: prototype.html
+2) Open in browser
+3) Login (demo):
+   - Керівник:      boss / 1234
+   - Нач. відділу2: head2 / 1234
+   - Нач. відділу5: head5 / 1234
+   - Виконавці: e21/e22/e51/e41 / 1234
+4) Дані локальні (localStorage). Для скидання — на екрані входу “Скинути дані”.
+-->
+
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Планувальник (Prototype UA)</title>
+  <style>
+    :root{
+      --bg:#0b0c10;
+      --panel:#11131a;
+      --panel2:#151925;
+      --text:#e9eef7;
+      --muted:#a7b0c2;
+      --border:#232a3a;
+      --accent:#6ea8fe;
+      --danger:#ff5c7a;
+      --warn:#ffcc66;
+      --ok:#45e69a;
+      --violet:#b783ff;
+      --shadow: 0 12px 30px rgba(0,0,0,.35);
+      --radius: 18px;
+      --radius2: 14px;
+      --max: 980px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Helvetica Neue", sans-serif;
+      background: radial-gradient(1100px 900px at 20% 0%, rgba(110,168,254,.18), transparent 55%),
+                  radial-gradient(900px 700px at 90% 10%, rgba(183,131,255,.13), transparent 55%),
+                  var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .app{
+      max-width: var(--max);
+      margin: 0 auto;
+      padding-bottom: calc(84px + env(safe-area-inset-bottom));
+    }
+    .topbar{
+      position: sticky;
+      top:0;
+      z-index: 20;
+      backdrop-filter: blur(10px);
+      background: linear-gradient(to bottom, rgba(11,12,16,.92), rgba(11,12,16,.68));
+      border-bottom: 1px solid rgba(35,42,58,.75);
+    }
+    .topbar-inner{
+      display:flex;align-items:center;justify-content: space-between;gap:10px;
+      padding: 14px 14px;
+      padding-top: calc(10px + env(safe-area-inset-top));
+    }
+    .brand{display:flex;align-items:center;gap:10px;}
+    .logo{
+      width:40px;height:40px;border-radius: 14px;
+      background: linear-gradient(140deg, rgba(110,168,254,.95), rgba(183,131,255,.85));
+      box-shadow: var(--shadow);
+      display:grid;place-items:center;
+      font-weight:900;color:#06101f;letter-spacing:.5px;
+    }
+    .titleblock{line-height:1.05}
+    .titleblock .h{font-size: 14px;font-weight:900;}
+    .titleblock .s{font-size: 12px;color: var(--muted);margin-top: 3px;}
+    .iconbtn{
+      height:42px; min-width:42px;border-radius: 14px;
+      background: rgba(21,25,37,.85);
+      border: 1px solid rgba(35,42,58,.85);
+      display:flex;align-items:center;justify-content:center;
+      color: var(--text);cursor:pointer;
+    }
+    .iconbtn:active{transform: scale(.98)}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding: 8px 10px;border-radius: 999px;
+      background: rgba(21,25,37,.75);
+      border: 1px solid rgba(35,42,58,.85);
+      color: var(--muted);font-size: 12px;white-space: nowrap;
+    }
+    .badge{
+      display:inline-flex;align-items:center;gap:6px;
+      padding: 6px 10px;border-radius: 999px;
+      font-size: 12px;border: 1px solid rgba(35,42,58,.85);
+      background: rgba(21,25,37,.75);color: var(--muted);
+    }
+    .b-danger{border-color: rgba(255,92,122,.35); color: #ffb3c0; background: rgba(255,92,122,.12);}
+    .b-warn{border-color: rgba(255,204,102,.35); color: #ffe0a3; background: rgba(255,204,102,.12);}
+    .b-ok{border-color: rgba(69,230,154,.35); color: #b8ffdf; background: rgba(69,230,154,.12);}
+    .b-violet{border-color: rgba(183,131,255,.38); color: #e3d2ff; background: rgba(183,131,255,.12);}
+    .b-blue{border-color: rgba(110,168,254,.35); color: #cfe2ff; background: rgba(110,168,254,.12);}
+
+    .content{padding: 14px;}
+    .card{
+      background: linear-gradient(180deg, rgba(21,25,37,.92), rgba(17,19,26,.92));
+      border: 1px solid rgba(35,42,58,.85);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card + .card{ margin-top: 12px; }
+    .card-h{
+      padding: 14px;display:flex;align-items:center;justify-content: space-between;gap: 10px;
+      border-bottom: 1px solid rgba(35,42,58,.7);
+      background: rgba(17,19,26,.35);
+    }
+    .card-h .t{font-weight:900;font-size: 14px;}
+    .card-b{ padding: 14px; }
+
+    .statlist{display:flex;flex-direction:column;gap:10px;}
+    .stat{
+      display:flex;align-items:center;justify-content: space-between;gap:12px;
+      padding: 12px;border-radius: var(--radius2);
+      background: rgba(21,25,37,.55);
+      border: 1px solid rgba(35,42,58,.75);
+      cursor:pointer;
+    }
+    .stat:active{transform: scale(.99)}
+    .stat .l{display:flex;flex-direction: column;gap:3px;}
+    .stat .l .k{font-weight:900;font-size: 14px;display:flex;align-items:center;gap:8px;}
+    .stat .l .d{font-size:12px;color:var(--muted)}
+    .stat .r{display:flex;align-items:center;gap:10px;font-weight:1000;}
+
+    .chips{display:flex;gap:10px;overflow:auto;padding-bottom: 4px;-webkit-overflow-scrolling: touch;}
+    .chip{
+      flex:0 0 auto;height: 36px;padding: 0 12px;border-radius: 999px;
+      border:1px solid rgba(35,42,58,.85);
+      background: rgba(21,25,37,.75);
+      color: var(--muted);
+      display:flex;align-items:center;gap:8px;
+      cursor:pointer;font-size: 12px;user-select:none;
+    }
+    .chip.active{background: rgba(110,168,254,.16);border-color: rgba(110,168,254,.45);color: #d7e7ff;}
+
+    .list{display:flex;flex-direction:column;gap:10px;margin-top: 12px;}
+    .item{
+      padding: 12px;border-radius: var(--radius2);
+      background: rgba(21,25,37,.55);
+      border: 1px solid rgba(35,42,58,.75);
+      cursor:pointer;
+    }
+    .item:active{transform: scale(.99)}
+    .item .row{display:flex;align-items:flex-start;justify-content: space-between;gap:10px;}
+    .item .row .name{font-weight:900;font-size:14px;line-height:1.2;}
+    .item .sub{
+      color: var(--muted);
+      font-size:12px;margin-top: 6px;
+      display:flex;flex-wrap: wrap;gap:8px;align-items:center;
+    }
+
+    .actions{margin-top: 10px;display:flex;flex-wrap: wrap;gap:8px;}
+    .btn{
+      height: 40px;padding: 0 12px;border-radius: 12px;
+      border:1px solid rgba(35,42,58,.85);
+      background: rgba(21,25,37,.75);
+      color: var(--text);
+      font-weight: 900;font-size: 13px;
+      cursor:pointer;
+      display:inline-flex;align-items:center;justify-content:center;gap:8px;
+      user-select:none;
+    }
+    .btn:active{transform: scale(.99)}
+    .btn.primary{background: rgba(110,168,254,.18);border-color: rgba(110,168,254,.5);}
+    .btn.danger{background: rgba(255,92,122,.14);border-color: rgba(255,92,122,.45);}
+    .btn.warn{background: rgba(255,204,102,.14);border-color: rgba(255,204,102,.45);}
+    .btn.ok{background: rgba(69,230,154,.14);border-color: rgba(69,230,154,.45);}
+    .btn.violet{background: rgba(183,131,255,.14);border-color: rgba(183,131,255,.5);}
+    .btn.ghost{background: transparent;border-color: rgba(35,42,58,.75);color: var(--muted);}
+
+    .fab{
+      position: fixed;right: 16px;
+      bottom: calc(86px + env(safe-area-inset-bottom));
+      z-index: 30;width: 56px;height: 56px;border-radius: 18px;
+      border: 1px solid rgba(110,168,254,.55);
+      background: linear-gradient(160deg, rgba(110,168,254,.25), rgba(183,131,255,.18));
+      box-shadow: var(--shadow);
+      color: #eaf2ff;font-weight: 1000;font-size: 22px;
+      cursor: pointer;display:grid; place-items:center;
+    }
+    .fab:active{transform: scale(.98)}
+
+    .nav{
+      position: fixed;left:0; right:0; bottom:0;z-index: 40;
+      background: rgba(11,12,16,.86);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(35,42,58,.8);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .nav-inner{max-width: var(--max);margin: 0 auto;display:grid;gap:8px;padding: 10px 12px;}
+    .tabs{display:grid;grid-template-columns: repeat(4, 1fr);gap: 10px;}
+    .tabs.three{ grid-template-columns: repeat(3, 1fr); }
+    .tab{
+      height: 54px;border-radius: 16px;
+      border: 1px solid rgba(35,42,58,.85);
+      background: rgba(21,25,37,.55);
+      display:flex;flex-direction: column;align-items:center;justify-content:center;gap:4px;
+      cursor:pointer;user-select:none;color: var(--muted);font-size: 11px;font-weight: 900;
+    }
+    .tab.active{background: rgba(110,168,254,.16);border-color: rgba(110,168,254,.5);color: #d7e7ff;}
+    .tab .ico{font-size: 18px; line-height: 1;}
+
+    .modal{
+      position: fixed;inset:0;background: rgba(0,0,0,.55);
+      display:none;align-items:flex-end;justify-content:center;z-index: 60;
+    }
+    .modal.show{display:flex;}
+    .sheet{
+      width: min(var(--max), 100%);
+      background: linear-gradient(180deg, rgba(21,25,37,.98), rgba(11,12,16,.98));
+      border: 1px solid rgba(35,42,58,.85);
+      border-radius: 22px 22px 0 0;
+      box-shadow: var(--shadow);
+      padding: 14px;max-height: 86vh;overflow:auto;
+    }
+    .sheet-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom: 10px;}
+    .sheet-h .t{font-weight: 950;}
+    .banner{
+      margin: 12px 14px 0;
+      border-radius: 16px;
+      border: 1px solid rgba(110,168,254,.45);
+      background: rgba(110,168,254,.14);
+      color:#d7e7ff;
+      padding: 10px 12px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      font-size: 12px;font-weight: 900;
+    }
+    .field{display:flex; flex-direction:column;gap:8px;margin-top: 10px;}
+    label{font-size: 12px; color: var(--muted); font-weight: 900;}
+    input, select, textarea{
+      width:100%;
+      background: rgba(21,25,37,.75);
+      border: 1px solid rgba(35,42,58,.85);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 12px 12px;
+      outline: none;
+      font-size: 14px;
+    }
+    textarea{min-height: 96px; resize: vertical;}
+    .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.4}
+    .sep{height:1px;background:rgba(35,42,58,.8);margin:12px 0}
+    .mono{font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;}
+    ul{margin:8px 0 0 18px; padding:0}
+    li{margin:4px 0}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <div id="modal" class="modal" role="dialog" aria-modal="true">
+    <div class="sheet" id="sheet">
+      <div class="sheet-h">
+        <div class="t" id="sheetTitle">Модальне вікно</div>
+        <div class="iconbtn" id="sheetClose" title="Закрити">✕</div>
+      </div>
+      <div id="sheetBody"></div>
+    </div>
+  </div>
+
+<script>
+/* ===========================
+   LOCAL STORAGE
+=========================== */
+const LS_KEY = "planner_prototype_ua_v2_full";
+
+function kyivNow(){
+  const d = new Date();
+  const parts = new Intl.DateTimeFormat('uk-UA', {
+    timeZone: 'Europe/Kiev',
+    year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit',
+    hour12:false
+  }).formatToParts(d).reduce((acc,p)=>{acc[p.type]=p.value; return acc;},{});
+  const iso = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+  return new Date(iso);
+}
+function kyivDateStr(dateObj=kyivNow()){
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth()+1).padStart(2,'0');
+  const d = String(dateObj.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+function isWeekend(dateObj=kyivNow()){
+  const day = dateObj.getDay(); // 0 Sun .. 6 Sat
+  return day === 0 || day === 6;
+}
+function minutesSinceMidnight(dateObj=kyivNow()){
+  return dateObj.getHours()*60 + dateObj.getMinutes();
+}
+const REPORT_DEADLINE_MIN = 17*60 + 30;
+
+function uid(prefix="id"){
+  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+}
+function loadState(){
+  const raw = localStorage.getItem(LS_KEY);
+  if(!raw) return null;
+  try{ return JSON.parse(raw); } catch{ return null; }
+}
+function saveState(st){
+  localStorage.setItem(LS_KEY, JSON.stringify(st));
+}
+function nowIsoKyiv(){
+  const d = kyivNow();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const da = String(d.getDate()).padStart(2,'0');
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  const ss = String(d.getSeconds()).padStart(2,'0');
+  return `${y}-${m}-${da} ${hh}:${mm}:${ss}`;
+}
+function addDays(dateStr, days){
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  dt.setDate(dt.getDate()+days);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth()+1).padStart(2,'0');
+  const dd = String(dt.getDate()).padStart(2,'0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+function seed(){
+  const today = kyivDateStr();
+  const st = {
+    version: 3,
+    session: { userId: null },
+    departments: [
+      {id:"d1", name:"Відділ №1"},
+      {id:"d2", name:"Відділ №2"},
+      {id:"d3", name:"Відділ №3"},
+      {id:"d4", name:"Відділ №4"},
+      {id:"d5", name:"Відділ №5"},
+      {id:"d6", name:"Відділ №6"},
+      {id:"d7", name:"Відділ №7"},
+    ],
+    users: [
+      {id:"u_boss", login:"boss", pass:"1234", name:"Керівник", role:"boss", departmentId:null, active:true},
+      {id:"u_h2", login:"head2", pass:"1234", name:"Начальник Відділу №2", role:"dept_head", departmentId:"d2", active:true},
+      {id:"u_h5", login:"head5", pass:"1234", name:"Начальник Відділу №5", role:"dept_head", departmentId:"d5", active:true},
+      {id:"u_e21", login:"e21", pass:"1234", name:"Виконавець 2-1", role:"executor", departmentId:"d2", active:true},
+      {id:"u_e22", login:"e22", pass:"1234", name:"Виконавець 2-2", role:"executor", departmentId:"d2", active:true},
+      {id:"u_e51", login:"e51", pass:"1234", name:"Виконавець 5-1", role:"executor", departmentId:"d5", active:true},
+      {id:"u_e41", login:"e41", pass:"1234", name:"Виконавець 4-1", role:"executor", departmentId:"d4", active:true},
+    ],
+    delegations: [],
+    tasks: [
+      {id:"T-2026-0004", type:"managerial", title:"Підготувати пропозиції", description:"Зібрати та узагальнити матеріали.", departmentId:"d2", responsibleUserId:"u_h2", priority:"високий", status:"в_процесі", startDate: today, dueDate: addDays(today, 6), nextControlDate: addDays(today, 3), createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
+      {id:"T-2026-0007", type:"managerial", title:"Оновити план-графік", description:"Актуалізувати план на тиждень.", departmentId:"d5", responsibleUserId:"u_h5", priority:"звичайний", status:"очікує_підтвердження", startDate: today, dueDate: addDays(today, 1), nextControlDate: addDays(today, 0), createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
+      {id:"I-2026-0021", type:"internal", title:"Звірити залишки ЗІП", description:"Перевірити склад та оновити облік.", departmentId:"d2", responsibleUserId:"u_e21", priority:"звичайний", status:"блокер", startDate: today, dueDate: null, nextControlDate: addDays(today, 2), createdBy:"u_h2", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
+      {id:"P-2026-0001", type:"personal", title:"Подзвонити постачальнику цементу", description:"Уточнити строки/логістику. Тримати на контролі.", departmentId:null, responsibleUserId:"u_boss", priority:"звичайний", status:"в_процесі", startDate: today, dueDate: null, nextControlDate: addDays(today, 1), createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
+    ],
+    taskUpdates: [
+      {id:uid("upd"), taskId:"T-2026-0004", authorUserId:"u_h2", at: nowIsoKyiv(), note:"В процесі, збираємо вихідні дані.", status:"в_процесі"},
+      {id:uid("upd"), taskId:"T-2026-0007", authorUserId:"u_h5", at: nowIsoKyiv(), note:"Готово, прошу підтвердити.", status:"очікує_підтвердження"},
+      {id:uid("upd"), taskId:"I-2026-0021", authorUserId:"u_h2", at: nowIsoKyiv(), note:"Немає доступу до складу, очікуємо ключі.", status:"блокер"},
+      {id:uid("upd"), taskId:"P-2026-0001", authorUserId:"u_boss", at: nowIsoKyiv(), note:"Потрібно зробити дзвінок, тримати на контролі.", status:"в_процесі"},
+    ],
+    dailyReports: [],
+    deptSummaries: []
+  };
+  saveState(st);
+  return st;
+}
+
+let STATE = loadState() || seed();
+
+/* ===========================
+   GETTERS / HELPERS
+=========================== */
+function getUserById(id){ return STATE.users.find(u=>u.id===id) || null; }
+function getDeptById(id){ return STATE.departments.find(d=>d.id===id) || null; }
+function currentSessionUser(){ return STATE.session.userId ? getUserById(STATE.session.userId) : null; }
+
+function htmlesc(s){
+  return (s ?? "").toString()
+    .replaceAll("&","&amp;").replaceAll("<","&lt;")
+    .replaceAll(">","&gt;").replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+function fmtDate(d){
+  if(!d) return "—";
+  const [y,m,da] = d.split("-");
+  return `${da}.${m}.${y}`;
+}
+function shorten(s, max=70){
+  s = (s || "").trim();
+  if(!s) return "—";
+  return s.length>max ? s.slice(0,max-1)+"…" : s;
+}
+
+/* ===========================
+   DELEGATIONS (в.о.)
+=========================== */
+function recomputeDelegationStatuses(){
+  const today = kyivDateStr();
+  STATE.delegations = STATE.delegations.map(d=>{
+    if(d.status==="скасовано") return d;
+    if(d.startDate > today) return {...d, status:"заплановано"};
+    if(d.untilCancel) return {...d, status:"активне"};
+    if(d.endDate && today <= d.endDate) return {...d, status:"активне"};
+    return {...d, status:"завершено"};
+  });
+}
+function activeDelegationForDept(deptId, dateStr=kyivDateStr()){
+  const list = STATE.delegations.filter(x=>x.departmentId===deptId);
+  const today = dateStr;
+  return list.find(x=>{
+    if(x.status==="скасовано" || x.status==="завершено") return false;
+    const starts = x.startDate <= today;
+    if(!starts) return false;
+    if(x.untilCancel) return true;
+    return today <= x.endDate;
+  }) || null;
+}
+function effectiveDeptHeadUserId(deptId){
+  const del = activeDelegationForDept(deptId);
+  if(del) return del.actingHeadUserId;
+  const head = STATE.users.find(u=>u.role==="dept_head" && u.departmentId===deptId && u.active);
+  return head ? head.id : null;
+}
+function isActingHead(userId){
+  const today = kyivDateStr();
+  return STATE.delegations.some(d=>{
+    if(d.status==="скасовано" || d.status==="завершено") return false;
+    if(d.actingHeadUserId !== userId) return false;
+    if(d.startDate > today) return false;
+    if(d.untilCancel) return true;
+    return today <= d.endDate;
+  });
+}
+function actingBannerForUser(u){
+  if(!u || u.role==="boss") return null;
+  const today = kyivDateStr();
+  const del = STATE.delegations.find(d=>{
+    if(d.status==="скасовано" || d.status==="завершено") return false;
+    if(d.actingHeadUserId !== u.id) return false;
+    if(d.startDate > today) return false;
+    if(d.untilCancel) return true;
+    return today <= d.endDate;
+  });
+  if(!del) return null;
+  const dept = getDeptById(del.departmentId);
+  const until = del.untilCancel ? "до скасування" : `до ${del.endDate}`;
+  return `🟦 Ви в.о. начальника ${dept?.name ?? "відділу"} ${until}`;
+}
+
+/* ===========================
+   PERMISSIONS
+=========================== */
+function canAccessDept(u, deptId){
+  if(!u) return false;
+  if(u.role==="boss") return true;
+  return u.departmentId === deptId;
+}
+function asDeptRole(u){
+  if(!u || u.role==="boss") return {scopeDeptId:null, isDeptHeadLike:false};
+  const deptId = u.departmentId;
+  const eff = effectiveDeptHeadUserId(deptId);
+  return {scopeDeptId:deptId, isDeptHeadLike: (eff === u.id)};
+}
+
+/* ===========================
+   TASK LOGIC
+=========================== */
+function statusLabel(s){
+  const map = {
+    "на_контролі":"На контролі",
+    "в_процесі":"В процесі",
+    "очікування":"Очікування",
+    "блокер":"Блокер",
+    "очікує_підтвердження":"Очікує підтвердження",
+    "закрито":"Закрито",
+    "скасовано":"Скасовано",
+  };
+  return map[s] || s;
+}
+function statusBadgeClass(s){
+  if(s==="закрито") return "b-ok";
+  if(s==="блокер" || s==="очікування") return "b-warn";
+  if(s==="очікує_підтвердження") return "b-violet";
+  if(s==="в_процесі" || s==="на_контролі") return "b-blue";
+  return "";
+}
+function isOverdue(task){
+  const today = kyivDateStr();
+  return !!task.dueDate && task.dueDate < today && task.status !== "закрито" && task.status !== "скасовано";
+}
+function needsControl(task){
+  const today = kyivDateStr();
+  if(!task.nextControlDate) return false;
+  if(task.status === "закрито" || task.status === "скасовано") return false;
+  return task.nextControlDate <= today;
+}
+function staleTask(task, days=7){
+  const updates = STATE.taskUpdates.filter(u=>u.taskId===task.id).sort((a,b)=>a.at.localeCompare(b.at));
+  const lastAt = updates.length ? updates[updates.length-1].at : task.updatedAt;
+  const lastDate = lastAt.slice(0,10);
+  const today = kyivDateStr();
+  const diff = dateDiffDays(lastDate, today);
+  return diff > days && task.status !== "закрито" && task.status !== "скасовано";
+}
+function dateDiffDays(a,b){
+  const [ay,am,ad] = a.split("-").map(Number);
+  const [by,bm,bd] = b.split("-").map(Number);
+  const da = new Date(ay,am-1,ad);
+  const db = new Date(by,bm-1,bd);
+  return Math.round((db-da)/(1000*60*60*24));
+}
+function getVisibleTasksForUser(u){
+  if(!u) return [];
+  if(u.role==="boss") return STATE.tasks.slice();
+  return STATE.tasks.filter(t=>t.departmentId===u.departmentId);
+}
+function updateTask(taskId, patch, authorId, note){
+  const idx = STATE.tasks.findIndex(t=>t.id===taskId);
+  if(idx < 0) return;
+  STATE.tasks[idx] = {...STATE.tasks[idx], ...patch, updatedAt: nowIsoKyiv()};
+  STATE.taskUpdates.push({
+    id: uid("upd"),
+    taskId,
+    authorUserId: authorId,
+    at: nowIsoKyiv(),
+    note: note || "",
+    status: patch.status || STATE.tasks[idx].status
+  });
+  saveState(STATE);
+}
+function createTask(task, authorId){
+  STATE.tasks.push(task);
+  STATE.taskUpdates.push({
+    id: uid("upd"),
+    taskId: task.id,
+    authorUserId: authorId,
+    at: nowIsoKyiv(),
+    note: "Створено задачу",
+    status: task.status
+  });
+  saveState(STATE);
+}
+function genTaskCode(prefix){
+  const year = kyivDateStr().slice(0,4);
+  const nums = STATE.tasks
+    .filter(t=>t.id.startsWith(prefix+"-"+year))
+    .map(t=>Number(t.id.split("-").pop()))
+    .filter(n=>Number.isFinite(n));
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `${prefix}-${year}-${String(next).padStart(4,'0')}`;
+}
+
+/* ===========================
+   REPORTS + SUMMARIES
+=========================== */
+function getVisibleReportsForUser(u){
+  if(!u) return [];
+  if(u.role==="boss") return STATE.dailyReports.slice();
+  return STATE.dailyReports.filter(r=>r.departmentId===u.departmentId);
+}
+function submitDailyReport({userId, doneText, progressText, blockedText}){
+  const u = getUserById(userId);
+  const date = kyivDateStr();
+  const now = kyivNow();
+  const late = (!isWeekend(now)) && minutesSinceMidnight(now) > REPORT_DEADLINE_MIN;
+
+  const existing = STATE.dailyReports.find(r=>r.userId===userId && r.reportDate===date);
+  const payload = {
+    id: existing?.id || uid("rep"),
+    reportDate: date,
+    userId,
+    departmentId: u.departmentId,
+    doneText, progressText, blockedText,
+    submittedAt: nowIsoKyiv(),
+    isLate: late
+  };
+  if(existing){
+    const idx = STATE.dailyReports.findIndex(r=>r.id===existing.id);
+    STATE.dailyReports[idx] = payload;
+  } else {
+    STATE.dailyReports.push(payload);
+  }
+  saveState(STATE);
+}
+function submitDeptSummary({departmentId, authorUserId, text}){
+  const date = kyivDateStr();
+  const existing = STATE.deptSummaries.find(s=>s.departmentId===departmentId && s.summaryDate===date);
+  const payload = {
+    id: existing?.id || uid("sum"),
+    summaryDate: date,
+    departmentId,
+    authorUserId,
+    text: (text || "").trim(),
+    submittedAt: nowIsoKyiv()
+  };
+  if(existing){
+    const idx = STATE.deptSummaries.findIndex(s=>s.id===existing.id);
+    STATE.deptSummaries[idx] = payload;
+  } else {
+    STATE.deptSummaries.push(payload);
+  }
+  saveState(STATE);
+}
+
+/* ===========================
+   MODAL
+=========================== */
+const root = document.getElementById("root");
+const modal = document.getElementById("modal");
+const sheetTitle = document.getElementById("sheetTitle");
+const sheetBody = document.getElementById("sheetBody");
+document.getElementById("sheetClose").addEventListener("click", ()=>hideSheet());
+modal.addEventListener("click", (e)=>{ if(e.target === modal) hideSheet(); });
+
+function showSheet(title, html){
+  sheetTitle.textContent = title;
+  sheetBody.innerHTML = html;
+  modal.classList.add("show");
+}
+function hideSheet(){
+  modal.classList.remove("show");
+  sheetBody.innerHTML = "";
+}
+
+/* ===========================
+   ROUTING / UI
+=========================== */
+const ROUTES = {
+  LOGIN: "login",
+  CONTROL: "control",
+  REPORTS: "reports",
+  TASKS: "tasks",
+  ANALYTICS: "analytics",
+  PROFILE: "profile",
+};
+let UI = {
+  route: ROUTES.LOGIN,
+  tab: ROUTES.CONTROL,
+  taskFilter: "активні",
+  reportFilter: "сьогодні",
+  reportsControlDate: null, // NEW
+};
+
+function ensureLoggedIn(){
+  const u = currentSessionUser();
+  if(!u){
+    UI.route = ROUTES.LOGIN;
+    return false;
+  }
+  return true;
+}
+function logout(){
+  STATE.session.userId = null;
+  saveState(STATE);
+  UI.route = ROUTES.LOGIN;
+  render();
+}
+function setTab(tab){
+  UI.tab = tab;
+  render();
+}
+function goProfile(){
+  UI.route = ROUTES.PROFILE;
+  render();
+}
+window.setTab = setTab;
+window.goProfile = goProfile;
+window.logout = logout;
+
+function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
+  const u = currentSessionUser();
+  const banner = actingBannerForUser(u);
+  const date = kyivDateStr();
+  const weekend = isWeekend(kyivNow());
+  const deadlineInfo = weekend ? "Вихідний" : "Дедлайн звіту: 17:30";
+
+  root.innerHTML = `
+    <div class="app">
+      <div class="topbar">
+        <div class="topbar-inner">
+          <div class="brand">
+            <div class="logo">П</div>
+            <div class="titleblock">
+              <div class="h">${htmlesc(title)}</div>
+              <div class="s">${htmlesc(subtitle)} • <span class="mono">${date}</span> • ${deadlineInfo}</div>
+            </div>
+          </div>
+          <button class="iconbtn" onclick="goProfile()" title="Профіль">👤</button>
+        </div>
+      </div>
+
+      ${banner ? `<div class="banner"><div>${htmlesc(banner)}</div><div class="mono">${date}</div></div>` : ``}
+
+      <div class="content">${bodyHtml}</div>
+
+      ${showFab ? `<button class="fab" id="fab">＋</button>` : ``}
+
+      <div class="nav">
+        <div class="nav-inner">
+          ${renderTabs(tabs)}
+        </div>
+      </div>
+    </div>
+  `;
+
+  if(showFab){
+    document.getElementById("fab").onclick = fabAction;
+  }
+}
+function renderTabs(tabs){
+  const u = currentSessionUser();
+  const cls = (u && u.role==="boss") ? "tabs" : "tabs three";
+  return `
+    <div class="${cls}">
+      ${tabs.map(t=>{
+        const active = (UI.tab===t.key) ? "active" : "";
+        return `
+          <div class="tab ${active}" onclick="setTab('${t.key}')">
+            <div class="ico">${t.ico}</div>
+            <div>${t.label}</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+/* ===========================
+   LOGIN VIEW
+=========================== */
+function viewLogin(){
+  const html = `
+    <div class="app">
+      <div class="topbar">
+        <div class="topbar-inner">
+          <div class="brand">
+            <div class="logo">П</div>
+            <div class="titleblock">
+              <div class="h">Планувальник</div>
+              <div class="s">Prototype • localStorage • Українська</div>
+            </div>
+          </div>
+          <div class="pill mono">${kyivDateStr()}</div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="card">
+          <div class="card-h">
+            <div class="t">Вхід</div>
+            <span class="badge b-blue">Mobile-first</span>
+          </div>
+          <div class="card-b">
+            <div class="field">
+              <label>Логін</label>
+              <input id="login" placeholder="boss / head2 / head5 / e21..." autocomplete="username" />
+            </div>
+            <div class="field">
+              <label>Пароль</label>
+              <input id="pass" placeholder="1234" type="password" autocomplete="current-password" />
+            </div>
+
+            <div class="actions" style="margin-top:14px;">
+              <button class="btn primary" id="btnLogin">УВІЙТИ</button>
+              <button class="btn ghost" id="btnReset">Скинути дані</button>
+            </div>
+
+            <div class="hint">
+              Демо-акаунти:<br/>
+              <span class="mono">boss / 1234</span> (керівник)<br/>
+              <span class="mono">head2 / 1234</span> (нач. відділу №2)<br/>
+              <span class="mono">head5 / 1234</span> (нач. відділу №5)<br/>
+              Виконавці: <span class="mono">e21/e22/e51/e41 / 1234</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  root.innerHTML = html;
+
+  document.getElementById("btnLogin").onclick = ()=>{
+    const login = document.getElementById("login").value.trim();
+    const pass = document.getElementById("pass").value.trim();
+    const user = STATE.users.find(u=>u.login===login && u.pass===pass && u.active);
+    if(!user){
+      showSheet("Помилка входу", `<div class="hint">Невірний логін або пароль.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+      return;
+    }
+    recomputeDelegationStatuses();
+    STATE.session.userId = user.id;
+    saveState(STATE);
+    UI.tab = ROUTES.CONTROL;
+    render();
+  };
+
+  document.getElementById("btnReset").onclick = ()=>{
+    localStorage.removeItem(LS_KEY);
+    STATE = seed();
+    showSheet("Готово", `<div class="hint">Дані скинуто. Завантажено демо.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+  };
+}
+
+/* ===========================
+   CONTROL VIEW
+=========================== */
+function viewControl(){
+  if(!ensureLoggedIn()) return viewLogin();
+  recomputeDelegationStatuses();
+
+  const u = currentSessionUser();
+  UI.tab = ROUTES.CONTROL;
+
+  const today = kyivDateStr();
+  const weekend = isWeekend(kyivNow());
+
+  const visibleExecutors = (u.role==="boss")
+    ? STATE.users.filter(x=>x.active && x.role==="executor")
+    : STATE.users.filter(x=>x.active && x.role==="executor" && x.departmentId===u.departmentId);
+
+  const reportsToday = STATE.dailyReports.filter(r=>r.reportDate===today);
+  const missing = weekend ? [] : visibleExecutors.filter(x=>!reportsToday.some(r=>r.userId===x.id));
+  const late = weekend ? [] : reportsToday.filter(r=>{
+    const usr = getUserById(r.userId);
+    if(!usr) return false;
+    if(u.role!=="boss" && usr.departmentId!==u.departmentId) return false;
+    return r.isLate;
+  });
+
+  const tasksVis = getVisibleTasksForUser(u);
+  const requestClose = tasksVis.filter(t=>t.type==="managerial" && t.status==="очікує_підтвердження");
+  const overdue = tasksVis.filter(t=>isOverdue(t));
+  const blockers = tasksVis.filter(t=>["блокер","очікування"].includes(t.status));
+  const stale = tasksVis.filter(t=>staleTask(t, 7));
+  const activeDelegations = (u.role==="boss") ? STATE.delegations.filter(d=>d.status==="активне") : [];
+
+  const {isDeptHeadLike} = asDeptRole(u);
+
+  let summaryBadge = "";
+  if(u.role!=="boss"){
+    const sum = STATE.deptSummaries.find(s=>s.departmentId===u.departmentId && s.summaryDate===today);
+    summaryBadge = sum ? `<span class="badge b-ok">✅ Підсумок подано</span>` : `<span class="badge b-warn">🟡 Підсумку немає</span>`;
+  }
+
+  const body = `
+    <div class="card">
+      <div class="card-h">
+        <div class="t">Контроль</div>
+        <span class="badge ${weekend ? "b-warn":"b-blue"}">${weekend ? "Вихідний" : "Будній"}</span>
+      </div>
+      <div class="card-b">
+        <div class="statlist">
+          <div class="stat" onclick="openMissing()">
+            <div class="l">
+              <div class="k">🔴 Не здали до 17:30</div>
+              <div class="d">${u.role==="boss" ? "По всіх відділах" : "По вашому відділу"}</div>
+            </div>
+            <div class="r"><span class="mono">${missing.length}</span> ›</div>
+          </div>
+
+          <div class="stat" onclick="openTaskList('очікує_підтвердження')">
+            <div class="l">
+              <div class="k">🟣 Очікує підтвердження</div>
+              <div class="d">Управлінські задачі</div>
+            </div>
+            <div class="r"><span class="mono">${requestClose.length}</span> ›</div>
+          </div>
+
+          <div class="stat" onclick="openTaskList('прострочені')">
+            <div class="l">
+              <div class="k">🟠 Прострочені задачі</div>
+              <div class="d">Є дедлайн і він минув</div>
+            </div>
+            <div class="r"><span class="mono">${overdue.length}</span> ›</div>
+          </div>
+
+          <div class="stat" onclick="openTaskList('блокери')">
+            <div class="l">
+              <div class="k">🟡 Блокери / очікування</div>
+              <div class="d">Потребує уваги</div>
+            </div>
+            <div class="r"><span class="mono">${blockers.length}</span> ›</div>
+          </div>
+
+          <div class="stat" onclick="openTaskList('без_оновлень')">
+            <div class="l">
+              <div class="k">⏳ Без оновлення &gt; 7 днів</div>
+              <div class="d">Довгі задачі “висять”</div>
+            </div>
+            <div class="r"><span class="mono">${stale.length}</span> ›</div>
+          </div>
+
+          ${u.role==="boss" ? `
+          <div class="stat" onclick="openDelegations()">
+            <div class="l">
+              <div class="k">🧩 Активні заміщення (в.о.)</div>
+              <div class="d">Хто зараз виконує обов’язки</div>
+            </div>
+            <div class="r"><span class="mono">${activeDelegations.length}</span> ›</div>
+          </div>
+          ` : `
+          <div class="stat" onclick="openDeptPeople()">
+            <div class="l">
+              <div class="k">👥 Люди / звітність сьогодні</div>
+              <div class="d">Хто здав / не здав</div>
+            </div>
+            <div class="r">›</div>
+          </div>
+          `}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="t">Швидкі дії</div>
+        <span class="badge b-blue">1–2 натискання</span>
+      </div>
+      <div class="card-b">
+        <div class="actions">
+          <button class="btn primary" onclick="openReportForm()">📝 Подати звіт</button>
+          <button class="btn ghost" onclick="openTaskList('активні')">📌 Активні задачі</button>
+
+          ${u.role==="boss" ? `
+            <button class="btn ghost" onclick="openCreateTask('personal')">➕ Моя задача</button>
+            <button class="btn ghost" onclick="openCreateTask('managerial')">➕ Управлінська задача</button>
+          ` : `
+            <button class="btn ghost" onclick="openCreateTask('internal')">➕ Внутрішня задача</button>
+            <button class="btn violet" onclick="openDeptSummaryForm()">🧾 Підсумок відділу</button>
+          `}
+        </div>
+
+        ${u.role!=="boss" ? `<div class="hint" style="margin-top:10px;">${summaryBadge}</div>` : `
+          <div class="hint" style="margin-top:10px;">Порада: “Мої задачі” — дзвінки/нагадування/контроль без дедлайну. Став контрольну дату.</div>
+        `}
+      </div>
+    </div>
+  `;
+
+  const tabs = (u.role==="boss")
+    ? [
+      {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
+      {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+      {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+    ]
+    : [
+      {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
+      {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+    ];
+
+  const subtitle = (u.role==="boss") ? "Керівник" : (getDeptById(u.departmentId)?.name ?? "Відділ");
+  const fabAction = ()=>{
+    if(u.role==="boss"){
+      showSheet("Додати", `
+        <div class="actions">
+          <button class="btn primary" onclick="hideSheet(); openCreateTask('personal')">➕ Моя задача</button>
+          <button class="btn ghost" onclick="hideSheet(); openCreateTask('managerial')">➕ Управлінська</button>
+        </div>
+        <div class="sep"></div>
+        <button class="btn ghost" onclick="hideSheet()">Закрити</button>
+      `);
+    } else {
+      openCreateTask('internal');
+    }
+  };
+
+  appShell({
+    title: "Контроль",
+    subtitle,
+    bodyHtml: body,
+    showFab: true,
+    fabAction,
+    tabs
+  });
+}
+
+/* ===========================
+   DEPT PEOPLE (Начальник/в.о.)
+=========================== */
+function openDeptPeople(){
+  const u = currentSessionUser();
+  const {isDeptHeadLike} = asDeptRole(u);
+  if(u.role==="boss"){
+    showSheet("Люди/штат", `<div class="hint">Цей екран потрібен саме для начальника відділу (або в.о.). У керівника є “👥 Люди” у вкладці “Звіти”.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  if(!isDeptHeadLike){
+    showSheet("Немає прав", `<div class="hint">Тільки начальник відділу (або в.о.) може переглядати “Люди/штат”.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+
+  const deptId = u.departmentId;
+  const dept = getDeptById(deptId);
+  const today = kyivDateStr();
+  const weekend = isWeekend(kyivNow());
+
+  const people = STATE.users
+    .filter(x=>x.active && x.departmentId===deptId)
+    .sort((a,b)=>a.role.localeCompare(b.role));
+
+  const repsToday = STATE.dailyReports.filter(r=>r.reportDate===today && r.departmentId===deptId);
+
+  const rows = people.map(p=>{
+    const expected = (p.role==="executor") ? (!weekend) : false;
+    const rep = repsToday.find(r=>r.userId===p.id) || null;
+
+    let badge = `<span class="badge">—</span>`;
+    if(expected){
+      if(!rep) badge = `<span class="badge b-danger">🔴 НЕ ЗДАВ</span>`;
+      else badge = rep.isLate ? `<span class="badge b-warn">🟡 ПІЗНО</span>` : `<span class="badge b-ok">✅ ВЧАСНО</span>`;
+    } else {
+      if(rep) badge = rep.isLate ? `<span class="badge b-warn">🟡 (є звіт, пізно)</span>` : `<span class="badge b-ok">✅ (є звіт)</span>`;
+      else badge = `<span class="badge">не очікується</span>`;
+    }
+
+    const roleLabel = (p.role==="dept_head") ? "начальник" : (p.role==="executor" ? "виконавець" : p.role);
+    const acting = isActingHead(p.id) ? " (в.о.)" : "";
+
+    return `
+      <div class="item" style="cursor:default;">
+        <div class="row">
+          <div>
+            <div class="name">${htmlesc(p.name)}${acting}</div>
+            <div class="sub">
+              <span class="pill">${roleLabel}</span>
+              ${badge}
+              ${rep ? `<span class="pill mono">${htmlesc(rep.submittedAt.slice(11,16))}</span>` : ``}
+            </div>
+            ${rep ? `<div class="hint" style="margin-top:8px;"><b>Коротко:</b> ${htmlesc(shorten(rep.doneText, 90))}</div>` : ``}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  showSheet(`Люди/штат — ${dept?.name ?? ""}`, `
+    <div class="hint">
+      Показано статус звітності за <span class="mono">${fmtDate(today)}</span>.
+      ${weekend ? "Сьогодні вихідний — звіти не обов’язкові." : "Очікуємо звіт лише від виконавців."}
+    </div>
+    <div class="sep"></div>
+    ${rows || `<div class="hint">Немає людей у відділі.</div>`}
+    <div class="sep"></div>
+    <div class="actions">
+      <button class="btn violet" onclick="openDeptSummaryForm()">🧾 Підсумок відділу</button>
+      <button class="btn ghost" onclick="hideSheet()">Закрити</button>
+    </div>
+  `);
+}
+window.openDeptPeople = openDeptPeople;
+
+/* ===========================
+   DEPT PEOPLE (КЕРІВНИК) — NEW: по даті
+=========================== */
+function openDeptPeopleBoss(deptId, dateStr){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Цей екран доступний тільки керівнику.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+
+  const dept = getDeptById(deptId);
+  const day = dateStr || kyivDateStr();
+  const weekend = isWeekend(new Date(day + "T12:00:00"));
+
+  const people = STATE.users
+    .filter(x=>x.active && x.departmentId===deptId)
+    .sort((a,b)=>a.role.localeCompare(b.role));
+
+  const reps = STATE.dailyReports.filter(r=>r.reportDate===day && r.departmentId===deptId);
+
+  const rows = people.map(p=>{
+    const expected = (p.role==="executor") ? (!weekend) : false;
+    const rep = reps.find(r=>r.userId===p.id) || null;
+
+    let badge = `<span class="badge">—</span>`;
+    if(expected){
+      if(!rep) badge = `<span class="badge b-danger">🔴 НЕ ЗДАВ</span>`;
+      else badge = rep.isLate ? `<span class="badge b-warn">🟡 ПІЗНО</span>` : `<span class="badge b-ok">✅ ВЧАСНО</span>`;
+    } else {
+      if(rep) badge = rep.isLate ? `<span class="badge b-warn">🟡 (є звіт, пізно)</span>` : `<span class="badge b-ok">✅ (є звіт)</span>`;
+      else badge = `<span class="badge">не очікується</span>`;
+    }
+
+    const roleLabel = (p.role==="dept_head") ? "начальник" : (p.role==="executor" ? "виконавець" : p.role);
+    const acting = isActingHead(p.id) ? " (в.о.)" : "";
+
+    return `
+      <div class="item" style="cursor:default;">
+        <div class="row">
+          <div>
+            <div class="name">${htmlesc(p.name)}${acting}</div>
+            <div class="sub">
+              <span class="pill">${roleLabel}</span>
+              ${badge}
+              ${rep ? `<span class="pill mono">${htmlesc(rep.submittedAt.slice(11,16))}</span>` : ``}
+            </div>
+            ${rep ? `<div class="hint" style="margin-top:8px;"><b>Коротко:</b> ${htmlesc(shorten(rep.doneText, 90))}</div>` : ``}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  showSheet(`Люди — ${dept?.name ?? ""}`, `
+    <div class="hint">
+      Дата: <span class="mono">${fmtDate(day)}</span>.
+      ${weekend ? "Вихідний — звіти не обов’язкові." : "Очікуємо звіт від виконавців."}
+    </div>
+    <div class="sep"></div>
+    ${rows || `<div class="hint">Немає людей у відділі.</div>`}
+    <div class="sep"></div>
+    <button class="btn primary" onclick="hideSheet()">Закрити</button>
+  `);
+}
+window.openDeptPeopleBoss = openDeptPeopleBoss;
+
+/* ===========================
+   DEPT SUMMARY FORM
+=========================== */
+function openDeptSummaryForm(){
+  const u = currentSessionUser();
+  const {isDeptHeadLike} = asDeptRole(u);
+  if(u.role==="boss"){
+    showSheet("Підсумок відділу", `<div class="hint">Підсумок подає начальник відділу (або в.о.).</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  if(!isDeptHeadLike){
+    showSheet("Немає прав", `<div class="hint">Тільки начальник відділу (або в.о.) може подати підсумок.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+
+  const today = kyivDateStr();
+  const existing = STATE.deptSummaries.find(s=>s.departmentId===u.departmentId && s.summaryDate===today);
+
+  showSheet("Підсумок відділу", `
+    <div class="hint">
+      3–5 речень. Ключове: виконано/ризики/що потребує рішення.
+    </div>
+    <div class="field">
+      <label>Текст підсумку</label>
+      <textarea id="sumText" maxlength="600" placeholder="Приклад: За день виконано … / В процесі … / Ризик: … / Потрібно рішення: …">${htmlesc(existing?.text || "")}</textarea>
+    </div>
+    <div class="hint">Ліміт: 600 символів. Дата: <span class="mono">${fmtDate(today)}</span>.</div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" onclick="submitDeptSummaryNow()">Надіслати</button>
+      <button class="btn ghost" onclick="hideSheet()">Скасувати</button>
+    </div>
+  `);
+}
+window.openDeptSummaryForm = openDeptSummaryForm;
+
+function submitDeptSummaryNow(){
+  const u = currentSessionUser();
+  const text = document.getElementById("sumText").value.trim();
+  if(text.length < 10){
+    showSheet("Помилка", `<div class="hint">Напиши хоча б кілька речень (мінімум 10 символів).</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  submitDeptSummary({departmentId:u.departmentId, authorUserId:u.id, text});
+  hideSheet();
+  render();
+}
+window.submitDeptSummaryNow = submitDeptSummaryNow;
+
+/* ===========================
+   REPORT FORM
+=========================== */
+function openReportForm(){
+  const u = currentSessionUser();
+  const now = kyivNow();
+  const date = kyivDateStr(now);
+  const weekend = isWeekend(now);
+  const mins = minutesSinceMidnight(now);
+  const late = (!weekend) && mins > REPORT_DEADLINE_MIN;
+
+  const existing = STATE.dailyReports.find(r=>r.userId===u.id && r.reportDate===date);
+
+  showSheet("Щоденний звіт", `
+    <div class="hint">
+      Звіт за <span class="mono">${fmtDate(date)}</span>.
+      ${weekend ? "Сьогодні вихідний — подання не обов’язкове." : (late ? "<b>Увага:</b> після 17:30 буде “ПІЗНО”." : "Подай до 17:30, щоб було вчасно.")}
+    </div>
+
+    <div class="field">
+      <label>Що виконано</label>
+      <textarea id="rDone" placeholder="Коротко, по пунктах. Можеш вставляти коди задач: T-2026-0004">${htmlesc(existing?.doneText || "")}</textarea>
+    </div>
+    <div class="field">
+      <label>Що в процесі</label>
+      <textarea id="rProg" placeholder="Що робиться зараз, що залишилось.">${htmlesc(existing?.progressText || "")}</textarea>
+    </div>
+    <div class="field">
+      <label>Проблеми / блокери</label>
+      <textarea id="rBlock" placeholder="Що заважає, кого/чого чекаємо.">${htmlesc(existing?.blockedText || "")}</textarea>
+    </div>
+
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" onclick="submitReportNow()">Надіслати</button>
+      <button class="btn ghost" onclick="hideSheet()">Скасувати</button>
+    </div>
+  `);
+}
+window.openReportForm = openReportForm;
+
+function submitReportNow(){
+  const u = currentSessionUser();
+  const doneText = document.getElementById("rDone").value.trim();
+  const progressText = document.getElementById("rProg").value.trim();
+  const blockedText = document.getElementById("rBlock").value.trim();
+  submitDailyReport({userId:u.id, doneText, progressText, blockedText});
+  hideSheet();
+  render();
+}
+window.submitReportNow = submitReportNow;
+
+/* ===========================
+   REPORTS VIEW (UPDATED with Control Block for Boss)
+=========================== */
+function setReportFilter(k){ UI.reportFilter = k; render(); }
+window.setReportFilter = setReportFilter;
+
+function setReportsControlDate(v){
+  if(!v) return;
+  UI.reportsControlDate = v;
+  render();
+}
+window.setReportsControlDate = setReportsControlDate;
+
+function viewReports(){
+  if(!ensureLoggedIn()) return viewLogin();
+  recomputeDelegationStatuses();
+
+  const u = currentSessionUser();
+  UI.tab = ROUTES.REPORTS;
+
+  const filter = UI.reportFilter;
+  const today = kyivDateStr();
+  let start = today;
+  if(filter==="тиждень") start = addDays(today, -6);
+  if(filter==="місяць") start = addDays(today, -29);
+
+  if(UI.reportsControlDate == null) UI.reportsControlDate = today;
+  const ctrlDate = UI.reportsControlDate;
+
+  const reports = getVisibleReportsForUser(u)
+    .filter(r=>r.reportDate >= start && r.reportDate <= today)
+    .sort((a,b)=> (b.reportDate + b.submittedAt).localeCompare(a.reportDate + a.submittedAt));
+
+  const sums = (u.role==="boss" ? STATE.deptSummaries : STATE.deptSummaries.filter(s=>s.departmentId===u.departmentId))
+    .filter(s=>s.summaryDate >= start && s.summaryDate <= today)
+    .sort((a,b)=> (b.summaryDate + b.submittedAt).localeCompare(a.summaryDate + a.submittedAt));
+
+  const chips = `
+    <div class="chips">
+      <div class="chip ${filter==="сьогодні"?"active":""}" onclick="setReportFilter('сьогодні')">Сьогодні</div>
+      <div class="chip ${filter==="тиждень"?"active":""}" onclick="setReportFilter('тиждень')">Тиждень</div>
+      <div class="chip ${filter==="місяць"?"active":""}" onclick="setReportFilter('місяць')">Місяць</div>
+    </div>
+  `;
+
+  function computeDeptControl(dateStr){
+    const weekend = isWeekend(new Date(dateStr + "T12:00:00"));
+    const reps = STATE.dailyReports.filter(r=>r.reportDate===dateStr);
+
+    return STATE.departments.map(d=>{
+      const executors = STATE.users.filter(x=>x.active && x.role==="executor" && x.departmentId===d.id);
+      const deptReps = reps.filter(r=>r.departmentId===d.id);
+
+      const missing = weekend ? [] : executors.filter(ex=>!deptReps.some(r=>r.userId===ex.id));
+      const late = weekend ? [] : deptReps.filter(r=>r.isLate && executors.some(ex=>ex.id===r.userId));
+
+      return {
+        deptId: d.id,
+        deptName: d.name,
+        weekend,
+        expected: executors.length,
+        missingCount: missing.length,
+        lateCount: late.length
+      };
+    });
+  }
+
+  const deptControl = (u.role==="boss") ? computeDeptControl(ctrlDate) : [];
+
+  const controlBlock = (u.role==="boss") ? `
+    <div class="item" style="cursor:default;">
+      <div class="row">
+        <div class="name">🧭 Контроль подання звітів</div>
+        <span class="badge b-blue">Керівник</span>
+      </div>
+      <div class="hint" style="margin-top:10px;">
+        Обери дату — і одразу видно “хто не здав” по відділах.
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <label>Дата</label>
+        <input type="date" id="ctrlDateInput" value="${ctrlDate}" onchange="setReportsControlDate(this.value)" />
+      </div>
+    </div>
+
+    <div class="list">
+      ${deptControl.map(x=>{
+        const missBadge = x.weekend ? `<span class="badge">Вихідний</span>` :
+          (x.missingCount ? `<span class="badge b-danger">🔴 ${x.missingCount} не здали</span>` : `<span class="badge b-ok">✅ всі здали</span>`);
+        const lateBadge = (!x.weekend && x.lateCount) ? `<span class="badge b-warn">🟡 ${x.lateCount} пізно</span>` : ``;
+
+        return `
+          <div class="item" style="cursor:default;">
+            <div class="row">
+              <div>
+                <div class="name">${htmlesc(x.deptName)}</div>
+                <div class="sub">
+                  ${missBadge} ${lateBadge}
+                  <span class="pill">Виконавців: <span class="mono">${x.expected}</span></span>
+                </div>
+              </div>
+              <button class="btn ghost" onclick="openDeptPeopleBoss('${x.deptId}','${ctrlDate}')">👥 Люди</button>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+
+    <div class="sep"></div>
+  ` : ``;
+
+  const listReports = reports.length ? reports.map(r=>{
+    const usr = getUserById(r.userId);
+    const dept = getDeptById(r.departmentId);
+    const badge = r.isLate ? `<span class="badge b-warn">🟡 ПІЗНО</span>` : `<span class="badge b-ok">✅ ВЧАСНО</span>`;
+    return `
+      <div class="item" onclick="openReport('${r.id}')">
+        <div class="row">
+          <div>
+            <div class="name">${htmlesc(dept?.name ?? "")} — ${htmlesc(usr?.name ?? "")}</div>
+            <div class="sub">
+              ${badge}
+              <span class="pill mono">${fmtDate(r.reportDate)}</span>
+              <span class="pill mono">${htmlesc(r.submittedAt.slice(11,16))}</span>
+            </div>
+          </div>
+          <div class="pill">›</div>
+        </div>
+        <div class="hint" style="margin-top:10px;">
+          <b>Виконано:</b> ${htmlesc(shorten(r.doneText))}<br/>
+          <b>Блокери:</b> ${htmlesc(shorten(r.blockedText))}
+        </div>
+      </div>
+    `;
+  }).join("") : `<div class="hint">Немає звітів за обраний період.</div>`;
+
+  const listSums = sums.length ? sums.map(s=>{
+    const dept = getDeptById(s.departmentId);
+    const au = getUserById(s.authorUserId);
+    return `
+      <div class="item" onclick="openDeptSummary('${s.id}')">
+        <div class="row">
+          <div>
+            <div class="name">🧾 Підсумок — ${htmlesc(dept?.name ?? "")}</div>
+            <div class="sub">
+              <span class="badge b-violet">Підсумок відділу</span>
+              <span class="pill mono">${fmtDate(s.summaryDate)}</span>
+              <span class="pill">${htmlesc(au?.name ?? "")}${isActingHead(au?.id) ? " (в.о.)" : ""}</span>
+              <span class="pill mono">${htmlesc(s.submittedAt.slice(11,16))}</span>
+            </div>
+          </div>
+          <div class="pill">›</div>
+        </div>
+        <div class="hint" style="margin-top:10px;">${htmlesc(shorten(s.text, 140))}</div>
+      </div>
+    `;
+  }).join("") : `<div class="hint">Немає підсумків за обраний період.</div>`;
+
+  const body = `
+    <div class="card">
+      <div class="card-h">
+        <div class="t">Звіти</div>
+        <span class="badge b-blue">${u.role==="boss" ? "Всі відділи" : "Мій відділ"}</span>
+      </div>
+      <div class="card-b">
+        ${chips}
+        <div class="sep"></div>
+
+        ${controlBlock}
+
+        <div class="item" style="cursor:default;">
+          <div class="row"><div class="name">🧾 Підсумки відділів</div><span class="badge b-violet mono">${sums.length}</span></div>
+          <div class="hint">Короткий підсумок (3–5 речень) від начальника/в.о.</div>
+        </div>
+        <div class="list">${listSums}</div>
+
+        <div class="sep"></div>
+        <div class="item" style="cursor:default;">
+          <div class="row"><div class="name">📝 Щоденні звіти</div><span class="badge b-blue mono">${reports.length}</span></div>
+          <div class="hint">Звіти виконавців (вчасно/пізно).</div>
+        </div>
+        <div class="list">${listReports}</div>
+      </div>
+    </div>
+  `;
+
+  const tabs = (u.role==="boss")
+    ? [
+      {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
+      {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+      {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+    ]
+    : [
+      {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
+      {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+    ];
+
+  const subtitle = (u.role==="boss") ? "Керівник" : (getDeptById(u.departmentId)?.name ?? "Відділ");
+  appShell({title:"Звіти", subtitle, bodyHtml: body, showFab:false, fabAction:null, tabs});
+}
+
+function openReport(reportId){
+  const u = currentSessionUser();
+  const r = STATE.dailyReports.find(x=>x.id===reportId);
+  if(!r) return;
+
+  if(u.role!=="boss" && !canAccessDept(u, r.departmentId)){
+    showSheet("Немає доступу", `<div class="hint">Цей звіт належить іншому відділу.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  const usr = getUserById(r.userId);
+  const dept = getDeptById(r.departmentId);
+
+  showSheet("Звіт", `
+    <div class="item" style="cursor:default;">
+      <div class="row">
+        <div>
+          <div class="name">${htmlesc(dept?.name ?? "")} — ${htmlesc(usr?.name ?? "")}</div>
+          <div class="sub">
+            <span class="pill mono">${fmtDate(r.reportDate)}</span>
+            <span class="pill mono">${htmlesc(r.submittedAt)}</span>
+            ${r.isLate ? `<span class="badge b-warn">🟡 ПІЗНО</span>` : `<span class="badge b-ok">✅ ВЧАСНО</span>`}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">✔ Виконано</div>
+      <div class="hint" style="margin-top:10px; white-space:pre-wrap;">${htmlesc(r.doneText || "—")}</div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">⏳ В процесі</div>
+      <div class="hint" style="margin-top:10px; white-space:pre-wrap;">${htmlesc(r.progressText || "—")}</div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">⛔ Блокери</div>
+      <div class="hint" style="margin-top:10px; white-space:pre-wrap;">${htmlesc(r.blockedText || "—")}</div>
+    </div>
+
+    <div class="sep"></div>
+    <button class="btn primary" onclick="hideSheet()">Закрити</button>
+  `);
+}
+window.openReport = openReport;
+
+function openDeptSummary(summaryId){
+  const u = currentSessionUser();
+  const s = STATE.deptSummaries.find(x=>x.id===summaryId);
+  if(!s) return;
+
+  if(u.role!=="boss" && s.departmentId !== u.departmentId){
+    showSheet("Немає доступу", `<div class="hint">Цей підсумок належить іншому відділу.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+
+  const dept = getDeptById(s.departmentId);
+  const au = getUserById(s.authorUserId);
+
+  showSheet("Підсумок відділу", `
+    <div class="item" style="cursor:default;">
+      <div class="row">
+        <div>
+          <div class="name">${htmlesc(dept?.name ?? "")}</div>
+          <div class="sub">
+            <span class="badge b-violet">Підсумок</span>
+            <span class="pill mono">${fmtDate(s.summaryDate)}</span>
+            <span class="pill">${htmlesc(au?.name ?? "")}${isActingHead(au?.id) ? " (в.о.)" : ""}</span>
+            <span class="pill mono">${htmlesc(s.submittedAt)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Текст</div>
+      <div class="hint" style="margin-top:10px; white-space:pre-wrap;">${htmlesc(s.text || "—")}</div>
+    </div>
+
+    <div class="sep"></div>
+    <button class="btn primary" onclick="hideSheet()">Закрити</button>
+  `);
+}
+window.openDeptSummary = openDeptSummary;
+
+/* ===========================
+   TASKS VIEW + ACTIONS
+=========================== */
+function setTaskFilter(k){ UI.taskFilter = k; render(); }
+window.setTaskFilter = setTaskFilter;
+
+function viewTasks(){
+  if(!ensureLoggedIn()) return viewLogin();
+  recomputeDelegationStatuses();
+  const u = currentSessionUser();
+  UI.tab = ROUTES.TASKS;
+
+  const tasks = getVisibleTasksForUser(u);
+  const filter = UI.taskFilter;
+
+  const filtered = tasks.filter(t=>{
+    if(filter==="активні") return t.status!=="закрито" && t.status!=="скасовано";
+    if(filter==="прострочені") return isOverdue(t);
+    if(filter==="очікує_підтвердження") return t.type==="managerial" && t.status==="очікує_підтвердження";
+    if(filter==="блокери") return ["блокер","очікування"].includes(t.status);
+    if(filter==="без_оновлень") return staleTask(t,7);
+    if(filter==="закриті") return t.status==="закрито";
+    return true;
+  }).sort((a,b)=>{
+    const ar = (a.status==="очікує_підтвердження") ? 0 : 1;
+    const br = (b.status==="очікує_підтвердження") ? 0 : 1;
+    if(ar!==br) return ar-br;
+    const ao = isOverdue(a) ? 0 : 1;
+    const bo = isOverdue(b) ? 0 : 1;
+    if(ao!==bo) return ao-bo;
+    const anc = a.nextControlDate || "9999-99-99";
+    const bnc = b.nextControlDate || "9999-99-99";
+    if(anc!==bnc) return anc.localeCompare(bnc);
+    const ad = a.dueDate || "9999-99-99";
+    const bd = b.dueDate || "9999-99-99";
+    return ad.localeCompare(bd);
+  });
+
+  const chips = `
+    <div class="chips">
+      <div class="chip ${filter==="активні"?"active":""}" onclick="setTaskFilter('активні')">Активні</div>
+      <div class="chip ${filter==="очікує_підтвердження"?"active":""}" onclick="setTaskFilter('очікує_підтвердження')">Очікує підтвердження</div>
+      <div class="chip ${filter==="прострочені"?"active":""}" onclick="setTaskFilter('прострочені')">Прострочені</div>
+      <div class="chip ${filter==="блокери"?"active":""}" onclick="setTaskFilter('блокери')">Блокери</div>
+      <div class="chip ${filter==="без_оновлень"?"active":""}" onclick="setTaskFilter('без_оновлень')">Без оновлень</div>
+      <div class="chip ${filter==="закриті"?"active":""}" onclick="setTaskFilter('закриті')">Закриті</div>
+    </div>
+  `;
+
+  const list = filtered.length ? filtered.map(t=>{
+    const dept = t.departmentId ? getDeptById(t.departmentId) : null;
+    const resp = getUserById(t.responsibleUserId);
+    const stBadge = `<span class="badge ${statusBadgeClass(t.status)}">${statusLabel(t.status)}</span>`;
+    const type = (t.type==="managerial") ? `<span class="badge b-blue">Управлінська</span>`
+              : (t.type==="internal") ? `<span class="badge">Внутрішня</span>`
+              : `<span class="badge b-violet">Моя задача</span>`;
+    const due = t.dueDate ? `<span class="pill mono">Дедлайн: ${fmtDate(t.dueDate)}</span>` : `<span class="pill">Без дедлайну</span>`;
+    const ctrl = t.nextControlDate ? `<span class="pill mono">Контроль: ${fmtDate(t.nextControlDate)}</span>` : `<span class="pill">Без контролю</span>`;
+    const over = isOverdue(t) ? `<span class="badge b-danger">🟠 Прострочено</span>` : "";
+    const ctrlNeed = needsControl(t) ? `<span class="badge b-warn">⏳ Контроль сьогодні</span>` : "";
+
+    return `
+      <div class="item">
+        <div class="row" onclick="openTask('${t.id}')">
+          <div>
+            <div class="name"><span class="mono">${htmlesc(t.id)}</span> ${htmlesc(t.title)}</div>
+            <div class="sub">${type} ${stBadge} ${over} ${ctrlNeed}</div>
+            <div class="sub">
+              ${dept ? `<span class="pill">${htmlesc(dept.name)}</span>` : `<span class="pill">Особисто</span>`}
+              <span class="pill">${htmlesc(resp?.name ?? "")}${isActingHead(resp?.id) ? " (в.о.)" : ""}</span>
+            </div>
+            <div class="sub">${due} ${ctrl}</div>
+          </div>
+          <div class="pill">›</div>
+        </div>
+        ${quickActionsForTask(u, t)}
+      </div>
+    `;
+  }).join("") : `<div class="hint">Немає задач за цим фільтром.</div>`;
+
+  const body = `
+    <div class="card">
+      <div class="card-h">
+        <div class="t">Задачі</div>
+        <span class="badge b-blue">${u.role==="boss" ? "Всі + мої" : "Мій відділ"}</span>
+      </div>
+      <div class="card-b">
+        ${chips}
+        <div class="list">${list}</div>
+      </div>
+    </div>
+  `;
+
+  const tabs = (u.role==="boss")
+    ? [
+      {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
+      {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+      {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+    ]
+    : [
+      {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
+      {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+    ];
+
+  const subtitle = (u.role==="boss") ? "Керівник" : (getDeptById(u.departmentId)?.name ?? "Відділ");
+  const fabAction = ()=>{
+    if(u.role==="boss"){
+      showSheet("Додати", `
+        <div class="actions">
+          <button class="btn primary" onclick="hideSheet(); openCreateTask('personal')">➕ Моя задача</button>
+          <button class="btn ghost" onclick="hideSheet(); openCreateTask('managerial')">➕ Управлінська</button>
+        </div>
+        <div class="sep"></div>
+        <button class="btn ghost" onclick="hideSheet()">Закрити</button>
+      `);
+    } else {
+      openCreateTask('internal');
+    }
+  };
+
+  appShell({title:"Задачі", subtitle, bodyHtml: body, showFab:true, fabAction, tabs});
+}
+
+function quickActionsForTask(u, t){
+  const {isDeptHeadLike} = asDeptRole(u);
+  const isBoss = (u.role==="boss");
+  const canUpdate = isBoss || isDeptHeadLike;
+  if(!canUpdate) return "";
+
+  const btns = [];
+
+  if(isBoss){
+    if(t.type==="managerial" && t.status==="очікує_підтвердження"){
+      btns.push(`<button class="btn ok" onclick="setTaskStatus('${t.id}','закрито')">✅ Підтвердити</button>`);
+      btns.push(`<button class="btn warn" onclick="setTaskStatus('${t.id}','в_процесі')">🔁 Повернути</button>`);
+    } else {
+      btns.push(`<button class="btn ok" onclick="setTaskStatus('${t.id}','закрито')">✅ Закрити</button>`);
+    }
+    btns.push(`<button class="btn" onclick="setTaskStatus('${t.id}','в_процесі')">🔄 В процесі</button>`);
+    btns.push(`<button class="btn warn" onclick="setTaskStatus('${t.id}','блокер')">⛔ Блокер</button>`);
+    btns.push(`<button class="btn ghost" onclick="setControlDate('${t.id}')">🗓 Контроль</button>`);
+  } else {
+    if(t.type==="internal"){
+      btns.push(`<button class="btn ok" onclick="setTaskStatus('${t.id}','закрито')">✅ Закрити</button>`);
+    }
+    if(t.type==="managerial"){
+      btns.push(`<button class="btn violet" onclick="setTaskStatus('${t.id}','очікує_підтвердження')">🟣 Запит закриття</button>`);
+    }
+    btns.push(`<button class="btn" onclick="setTaskStatus('${t.id}','в_процесі')">🔄 В процесі</button>`);
+    btns.push(`<button class="btn warn" onclick="setTaskStatus('${t.id}','блокер')">⛔ Блокер</button>`);
+    btns.push(`<button class="btn ghost" onclick="setControlDate('${t.id}')">🗓 Контроль</button>`);
+  }
+
+  return `<div class="actions">${btns.join("")}</div>`;
+}
+window.quickActionsForTask = quickActionsForTask;
+
+function setTaskStatus(taskId, status){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!t) return;
+
+  const {isDeptHeadLike} = asDeptRole(u);
+
+  if(u.role==="boss"){
+    updateTask(taskId, {status}, u.id, `Статус → ${statusLabel(status)}`);
+    render();
+    return;
+  }
+
+  if(!isDeptHeadLike){
+    showSheet("Немає прав", `<div class="hint">Тільки начальник відділу (або в.о.) може змінювати статуси.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  if(t.departmentId !== u.departmentId){
+    showSheet("Немає прав", `<div class="hint">Ви не маєте доступу до іншого відділу.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  if(t.type==="managerial" && status==="закрито"){
+    showSheet("Обмеження", `<div class="hint">Управлінську задачу закриває тільки керівник. Використайте “Запит закриття”.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  updateTask(taskId, {status}, u.id, `Статус → ${statusLabel(status)}`);
+  render();
+}
+window.setTaskStatus = setTaskStatus;
+
+function setControlDate(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!t) return;
+
+  const {isDeptHeadLike} = asDeptRole(u);
+  if(!(u.role==="boss" || isDeptHeadLike)){
+    showSheet("Немає прав", `<div class="hint">Тільки керівник або начальник відділу (в.о.) може змінювати контрольну дату.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+
+  showSheet("Контрольна дата", `
+    <div class="hint">Контрольна дата — коли потрібно повернутися до задачі.</div>
+    <div class="field">
+      <label>Контроль</label>
+      <input id="ctrlDate" type="date" value="${t.nextControlDate ?? kyivDateStr()}" />
+    </div>
+    <div class="field">
+      <label><input id="ctrlClear" type="checkbox" /> Прибрати контрольну дату</label>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" onclick="applyControlDate('${t.id}')">Зберегти</button>
+      <button class="btn ghost" onclick="hideSheet()">Скасувати</button>
+    </div>
+  `);
+}
+window.setControlDate = setControlDate;
+
+function applyControlDate(taskId){
+  const u = currentSessionUser();
+  const clear = document.getElementById("ctrlClear").checked;
+  const d = clear ? null : (document.getElementById("ctrlDate").value || null);
+  updateTask(taskId, {nextControlDate: d}, u.id, `Контроль → ${d ? fmtDate(d) : "без контролю"}`);
+  hideSheet();
+  render();
+}
+window.applyControlDate = applyControlDate;
+
+function openTask(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!t) return;
+
+  if(u.role!=="boss" && t.departmentId && !canAccessDept(u, t.departmentId)){
+    showSheet("Немає доступу", `<div class="hint">Ця задача належить іншому відділу.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  if(t.type==="personal" && u.role!=="boss"){
+    showSheet("Немає доступу", `<div class="hint">Особисті задачі бачить тільки керівник.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+
+  const dept = t.departmentId ? getDeptById(t.departmentId) : null;
+  const resp = getUserById(t.responsibleUserId);
+  const upd = STATE.taskUpdates.filter(x=>x.taskId===t.id).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,8);
+
+  showSheet("Картка задачі", `
+    <div class="item" style="cursor:default;">
+      <div class="row">
+        <div>
+          <div class="name"><span class="mono">${htmlesc(t.id)}</span> ${htmlesc(t.title)}</div>
+          <div class="sub">
+            ${
+              t.type==="managerial" ? `<span class="badge b-blue">Управлінська</span>` :
+              t.type==="internal" ? `<span class="badge">Внутрішня</span>` :
+              `<span class="badge b-violet">Моя задача</span>`
+            }
+            <span class="badge ${statusBadgeClass(t.status)}">${statusLabel(t.status)}</span>
+            ${isOverdue(t) ? `<span class="badge b-danger">🟠 Прострочено</span>` : ``}
+            ${needsControl(t) ? `<span class="badge b-warn">⏳ Контроль сьогодні</span>` : ``}
+          </div>
+          <div class="sub">
+            ${dept ? `<span class="pill">${htmlesc(dept.name)}</span>` : `<span class="pill">Особисто</span>`}
+            <span class="pill">${htmlesc(resp?.name ?? "")}${isActingHead(resp?.id) ? " (в.о.)" : ""}</span>
+            <span class="pill">${htmlesc(t.priority)}</span>
+          </div>
+          <div class="sub">
+            ${t.dueDate ? `<span class="pill mono">Дедлайн: ${fmtDate(t.dueDate)}</span>` : `<span class="pill">Без дедлайну</span>`}
+            ${t.nextControlDate ? `<span class="pill mono">Контроль: ${fmtDate(t.nextControlDate)}</span>` : `<span class="pill">Без контролю</span>`}
+          </div>
+        </div>
+      </div>
+
+      <div class="hint" style="margin-top:10px;">
+        <b>Опис:</b> ${htmlesc(t.description || "—")}
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="item" style="cursor:default;">
+      <div class="row"><div class="name">Оновлення</div><span class="badge b-blue mono">${upd.length}</span></div>
+      <div class="hint" style="margin-top:10px;">
+        ${upd.length ? upd.map(x=>{
+          const au = getUserById(x.authorUserId);
+          const who = au ? `${au.name}${isActingHead(au.id) ? " (в.о.)" : ""}` : "—";
+          return `• <span class="mono">${htmlesc(x.at)}</span> — <b>${htmlesc(who)}</b>: ${htmlesc(x.note || "")}`;
+        }).join("<br/>") : "Немає оновлень."}
+      </div>
+    </div>
+
+    <div class="sep"></div>
+    ${quickActionsForTask(u, t) || `<button class="btn primary" onclick="hideSheet()">Закрити</button>`}
+  `);
+}
+window.openTask = openTask;
+
+/* ===========================
+   CREATE TASK
+=========================== */
+function openCreateTask(kind){
+  const u = currentSessionUser();
+  const {isDeptHeadLike} = asDeptRole(u);
+
+  if(kind==="managerial" && u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Управлінські задачі створює тільки керівник.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  if(kind==="personal" && u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Особисті задачі створює та бачить тільки керівник.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  if(kind==="internal" && !(u.role==="boss" || isDeptHeadLike)){
+    showSheet("Немає прав", `<div class="hint">Внутрішні задачі може створювати начальник відділу (або в.о.).</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+
+  const today = kyivDateStr();
+  const isPersonal = (kind==="personal");
+
+  const deptOptions = isPersonal
+    ? []
+    : (u.role==="boss" ? STATE.departments : STATE.departments.filter(d=>d.id===u.departmentId));
+
+  const userOptions = (deptId)=>{
+    if(isPersonal) return [STATE.users.find(x=>x.id==="u_boss")].filter(Boolean);
+    const list = STATE.users.filter(x=>x.active && x.departmentId===deptId && (x.role==="executor" || x.role==="dept_head"));
+    return list;
+  };
+
+  showSheet(
+    kind==="managerial" ? "Нова управлінська задача" :
+    kind==="internal" ? "Нова внутрішня задача" :
+    "Нова моя задача",
+    `
+    <div class="hint">
+      ${
+        kind==="managerial" ? "Управлінська: ставить керівник, закриває керівник." :
+        kind==="internal" ? "Внутрішня: створює начальник/в.о., закриває начальник/в.о." :
+        "Моя задача: для себе (дзвінки/нагадування/контроль)."
+      }
+      <br/>Можна <b>без дедлайну</b> — тоді використовуй <b>контрольну дату</b>.
+    </div>
+
+    <div class="field">
+      <label>Назва</label>
+      <input id="tTitle" placeholder="Коротко: що зробити" />
+    </div>
+
+    <div class="field">
+      <label>Опис (опційно)</label>
+      <textarea id="tDesc" placeholder="Деталі / очікуваний результат"></textarea>
+    </div>
+
+    ${!isPersonal ? `
+      <div class="field">
+        <label>Відділ</label>
+        <select id="tDept" onchange="refreshRespOptions()">
+          ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Відповідальний</label>
+        <select id="tResp"></select>
+      </div>
+    ` : `
+      <div class="field">
+        <label>Відповідальний</label>
+        <input value="Керівник (ви)" disabled />
+      </div>
+    `}
+
+    <div class="row2">
+      <div class="field">
+        <label>Пріоритет</label>
+        <select id="tPr">
+          <option value="звичайний">Звичайний</option>
+          <option value="високий">Високий</option>
+          <option value="терміново">Терміново</option>
+          <option value="низький">Низький</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Дедлайн</label>
+        <input id="tDue" type="date" value="${addDays(today, 3)}" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label><input id="noDue" type="checkbox" onchange="toggleNoDue()" /> Без дедлайну</label>
+    </div>
+
+    <div class="field">
+      <label>Контрольна дата (опційно)</label>
+      <input id="tCtrl" type="date" value="${addDays(today, 1)}" />
+    </div>
+
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" onclick="createTaskNow('${kind}')">Створити</button>
+      <button class="btn ghost" onclick="hideSheet()">Скасувати</button>
+    </div>
+  `);
+
+  window.toggleNoDue = ()=>{
+    const no = document.getElementById("noDue").checked;
+    const due = document.getElementById("tDue");
+    due.disabled = no;
+    if(no) due.value = "";
+    else if(!due.value) due.value = addDays(today, 3);
+  };
+
+  window.refreshRespOptions = ()=>{
+    const deptSel = document.getElementById("tDept");
+    const respSel = document.getElementById("tResp");
+    const deptId = deptSel.value;
+    const opts = userOptions(deptId);
+    respSel.innerHTML = opts.map(x=>`<option value="${x.id}">${htmlesc(x.name)}</option>`).join("");
+  };
+
+  if(!isPersonal){
+    window.refreshRespOptions();
+  }
+}
+window.openCreateTask = openCreateTask;
+
+function createTaskNow(kind){
+  const u = currentSessionUser();
+  const title = document.getElementById("tTitle").value.trim();
+  if(!title){
+    showSheet("Помилка", `<div class="hint">Вкажи назву задачі.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  const desc = document.getElementById("tDesc").value.trim();
+  const pr = document.getElementById("tPr").value;
+  const noDue = document.getElementById("noDue").checked;
+  const due = noDue ? null : (document.getElementById("tDue").value || null);
+  const ctrl = (document.getElementById("tCtrl").value || null);
+
+  const today = kyivDateStr();
+
+  const type = kind;
+  const idPrefix = (kind==="managerial") ? "T" : (kind==="internal" ? "I" : "P");
+  const id = genTaskCode(idPrefix);
+
+  let departmentId = null;
+  let responsibleUserId = "u_boss";
+
+  if(kind==="personal"){
+    departmentId = null;
+    responsibleUserId = "u_boss";
+  } else {
+    departmentId = document.getElementById("tDept").value;
+    responsibleUserId = document.getElementById("tResp").value;
+  }
+
+  const status = "в_процесі";
+
+  createTask({
+    id,
+    type,
+    title,
+    description: desc,
+    departmentId,
+    responsibleUserId,
+    priority: pr,
+    status,
+    startDate: today,
+    dueDate: due,
+    nextControlDate: ctrl,
+    createdBy: u.id,
+    createdAt: nowIsoKyiv(),
+    updatedAt: nowIsoKyiv()
+  }, u.id);
+
+  hideSheet();
+  UI.tab = ROUTES.TASKS;
+  UI.taskFilter = "активні";
+  render();
+}
+window.createTaskNow = createTaskNow;
+
+/* ===========================
+   MISSING LIST
+=========================== */
+function groupBy(arr, fn){
+  return arr.reduce((acc,x)=>{
+    const k = fn(x) ?? "unknown";
+    acc[k] = acc[k] || [];
+    acc[k].push(x);
+    return acc;
+  },{});
+}
+function openMissing(){
+  const u = currentSessionUser();
+  const today = kyivDateStr();
+  const weekend = isWeekend(kyivNow());
+
+  const executors = (u.role==="boss")
+    ? STATE.users.filter(x=>x.active && x.role==="executor")
+    : STATE.users.filter(x=>x.active && x.role==="executor" && x.departmentId===u.departmentId);
+
+  const reportsToday = STATE.dailyReports.filter(r=>r.reportDate===today);
+  const missing = weekend ? [] : executors.filter(x=>!reportsToday.some(r=>r.userId===x.id));
+
+  const grouped = groupBy(missing, x=>x.departmentId);
+  const html = `
+    <div class="hint">${weekend ? "Сьогодні вихідний — контроль звітів не обов’язковий." : "Список виконавців без звіту."}</div>
+    <div class="sep"></div>
+    ${
+      Object.keys(grouped).length
+      ? Object.entries(grouped).map(([deptId, users])=>{
+          const dept = getDeptById(deptId);
+          return `
+            <div class="item" style="cursor:default;">
+              <div class="row"><div class="name">${htmlesc(dept?.name ?? "")}</div><span class="badge b-danger mono">${users.length}</span></div>
+              <div class="hint" style="margin-top:10px;">${users.map(x=>`• ${htmlesc(x.name)}`).join("<br/>")}</div>
+            </div>
+          `;
+        }).join("")
+      : `<div class="hint">Немає “не здали”.</div>`
+    }
+    <div class="sep"></div>
+    <button class="btn primary" onclick="hideSheet()">Закрити</button>
+  `;
+  showSheet("Не здали", html);
+}
+window.openMissing = openMissing;
+
+/* ===========================
+   DELEGATIONS (boss only)
+=========================== */
+function createDelegation({departmentId, actingHeadUserId, startDate, endDate, untilCancel}){
+  const primary = STATE.users.find(u=>u.role==="dept_head" && u.departmentId===departmentId);
+  if(!primary) throw new Error("Немає начальника відділу в довіднику.");
+
+  STATE.delegations = STATE.delegations.map(d=>{
+    if(d.departmentId!==departmentId) return d;
+    if(d.status==="скасовано" || d.status==="завершено") return d;
+    return {...d, status:"завершено", endedAt: nowIsoKyiv()};
+  });
+
+  STATE.delegations.push({
+    id: uid("del"),
+    departmentId,
+    primaryHeadUserId: primary.id,
+    actingHeadUserId,
+    startDate,
+    endDate: untilCancel ? null : endDate,
+    untilCancel: !!untilCancel,
+    status: "заплановано",
+    createdAt: nowIsoKyiv(),
+    createdBy: "u_boss",
+  });
+
+  recomputeDelegationStatuses();
+  saveState(STATE);
+}
+function cancelDelegation(delegationId){
+  const idx = STATE.delegations.findIndex(d=>d.id===delegationId);
+  if(idx<0) return;
+  STATE.delegations[idx] = {...STATE.delegations[idx], status:"скасовано", cancelledAt: nowIsoKyiv()};
+  saveState(STATE);
+}
+
+function openDelegations(){
+  const u = currentSessionUser();
+  if(u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Заміщення призначає тільки керівник.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+    return;
+  }
+  recomputeDelegationStatuses();
+
+  const active = STATE.delegations.filter(d=>d.status==="активне");
+  const scheduled = STATE.delegations.filter(d=>d.status==="заплановано");
+
+  const renderDel = (d)=>{
+    const dept = getDeptById(d.departmentId);
+    const prim = getUserById(d.primaryHeadUserId);
+    const act = getUserById(d.actingHeadUserId);
+    const period = d.untilCancel ? `з ${fmtDate(d.startDate)} • до скасування` : `з ${fmtDate(d.startDate)} по ${fmtDate(d.endDate)}`;
+    const stCls = d.status==="активне" ? "b-blue" : "b-warn";
+    const stLbl = d.status==="активне" ? "АКТИВНЕ" : "ЗАПЛАНОВАНО";
+
+    return `
+      <div class="item" style="cursor:default;">
+        <div class="row">
+          <div>
+            <div class="name">${htmlesc(dept?.name ?? "")}</div>
+            <div class="sub">
+              <span class="badge ${stCls}">${stLbl}</span>
+              <span class="pill">Нач.: ${htmlesc(prim?.name ?? "")}</span>
+              <span class="pill">В.о.: ${htmlesc(act?.name ?? "")}</span>
+            </div>
+            <div class="hint" style="margin-top:10px;">Період: <span class="mono">${htmlesc(period)}</span></div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn danger" onclick="cancelDelegationUi('${d.id}')">Скасувати</button>
+        </div>
+      </div>
+    `;
+  };
+
+  showSheet("Заміщення (в.о.)", `
+    <div class="hint">Тут ти призначаєш в.о. начальника відділу. Відділ має лише одного активного керівника на дату.</div>
+    <div class="sep"></div>
+
+    <div class="item" style="cursor:default;">
+      <div class="row"><div class="name">Активні</div><span class="badge b-blue mono">${active.length}</span></div>
+    </div>
+    ${active.map(renderDel).join("") || `<div class="hint">Немає активних.</div>`}
+
+    <div class="sep"></div>
+
+    <div class="item" style="cursor:default;">
+      <div class="row"><div class="name">Заплановані</div><span class="badge b-warn mono">${scheduled.length}</span></div>
+    </div>
+    ${scheduled.map(renderDel).join("") || `<div class="hint">Немає запланованих.</div>`}
+
+    <div class="sep"></div>
+    <button class="btn primary" onclick="openDelegationCreate()">➕ Додати заміщення</button>
+    <button class="btn ghost" onclick="hideSheet()">Закрити</button>
+  `);
+}
+window.openDelegations = openDelegations;
+
+function cancelDelegationUi(id){
+  cancelDelegation(id);
+  hideSheet();
+  openDelegations();
+}
+window.cancelDelegationUi = cancelDelegationUi;
+
+function openDelegationCreate(){
+  const deptOptions = STATE.departments;
+  const today = kyivDateStr();
+
+  showSheet("Нове заміщення", `
+    <div class="hint">Призначення <b>в.о.</b> (лише керівник).</div>
+
+    <div class="field">
+      <label>Відділ</label>
+      <select id="dDept" onchange="refreshDelPeople()">
+        ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
+      </select>
+    </div>
+
+    <div class="field">
+      <label>В.о. начальника</label>
+      <select id="dAct"></select>
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Початок</label>
+        <input id="dStart" type="date" value="${today}" />
+      </div>
+      <div class="field">
+        <label>Кінець</label>
+        <input id="dEnd" type="date" value="${addDays(today, 7)}" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label><input id="dUntil" type="checkbox" /> До скасування</label>
+    </div>
+
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" onclick="createDelegationNow()">Зберегти</button>
+      <button class="btn ghost" onclick="openDelegations()">Назад</button>
+    </div>
+  `);
+
+  window.refreshDelPeople = ()=>{
+    const deptId = document.getElementById("dDept").value;
+    const actingSelect = document.getElementById("dAct");
+    const primary = STATE.users.find(u=>u.role==="dept_head" && u.departmentId===deptId);
+    const candidates = STATE.users.filter(u=>u.active && u.departmentId===deptId && u.id !== primary?.id);
+    actingSelect.innerHTML = candidates.map(c=>`<option value="${c.id}">${htmlesc(c.name)} (${c.role})</option>`).join("");
+  };
+  window.refreshDelPeople();
+}
+window.openDelegationCreate = openDelegationCreate;
+
+function createDelegationNow(){
+  try{
+    const deptId = document.getElementById("dDept").value;
+    const act = document.getElementById("dAct").value;
+    const start = document.getElementById("dStart").value;
+    const end = document.getElementById("dEnd").value;
+    const until = document.getElementById("dUntil").checked;
+    if(!deptId || !act || !start || (!until && !end)){
+      showSheet("Помилка", `<div class="hint">Заповни обов’язкові поля.</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+      return;
+    }
+    createDelegation({departmentId:deptId, actingHeadUserId:act, startDate:start, endDate:end, untilCancel:until});
+    hideSheet();
+    openDelegations();
+    render();
+  } catch(err){
+    showSheet("Помилка", `<div class="hint">${htmlesc(err.message || "Не вдалося створити заміщення.")}</div><div class="sep"></div><button class="btn primary" onclick="hideSheet()">OK</button>`);
+  }
+}
+window.createDelegationNow = createDelegationNow;
+
+/* ===========================
+   PROFILE VIEW
+=========================== */
+function viewProfile(){
+  if(!ensureLoggedIn()) return viewLogin();
+  recomputeDelegationStatuses();
+
+  const u = currentSessionUser();
+  UI.route = ROUTES.PROFILE;
+
+  const dept = u.departmentId ? getDeptById(u.departmentId) : null;
+  const {isDeptHeadLike} = asDeptRole(u);
+  const roleText = (u.role==="boss") ? "Керівник" : (isDeptHeadLike ? "Начальник відділу / в.о." : "Виконавець");
+  const delBanner = actingBannerForUser(u);
+
+  const body = `
+    <div class="card">
+      <div class="card-h">
+        <div class="t">Профіль</div>
+        <span class="badge b-blue">${htmlesc(roleText)}</span>
+      </div>
+      <div class="card-b">
+        <div class="item" style="cursor:default;">
+          <div class="row">
+            <div>
+              <div class="name">${htmlesc(u.name)}</div>
+              <div class="sub">
+                <span class="pill mono">${htmlesc(u.login)}</span>
+                ${dept ? `<span class="pill">${htmlesc(dept.name)}</span>` : `<span class="pill">Всі відділи</span>`}
+              </div>
+            </div>
+          </div>
+          ${delBanner ? `<div class="hint" style="margin-top:10px;">${htmlesc(delBanner)}</div>` : ``}
+        </div>
+
+        <div class="actions">
+          ${u.role==="boss" ? `<button class="btn primary" onclick="openDelegations()">🧩 Заміщення (в.о.)</button>` : ``}
+          <button class="btn ghost" onclick="openAbout()">ℹ️ Про прототип</button>
+          <button class="btn danger" onclick="logout()">🚪 Вийти</button>
+        </div>
+
+        <div class="hint">
+          Для імітації начальника: вийди → зайди як <span class="mono">head2</span> або <span class="mono">head5</span>.
+        </div>
+      </div>
+    </div>
+  `;
+
+  const tabs = (u.role==="boss")
+    ? [
+      {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
+      {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+      {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+    ]
+    : [
+      {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
+      {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+    ];
+
+  const subtitle = (u.role==="boss") ? "Керівник" : (dept?.name ?? "Відділ");
+  appShell({title:"Профіль", subtitle, bodyHtml: body, showFab:false, fabAction:null, tabs});
+}
+
+function openAbout(){
+  showSheet("Про прототип", `
+    <div class="hint">
+      Це <b>mobile-first</b> прототип без сервера.<br/>
+      Дані зберігаються в <b>localStorage</b> (тільки для тестування).<br/><br/>
+      Реалізовано:
+      <ul>
+        <li>Логін/пароль</li>
+        <li>Ролі: керівник / начальник відділу / виконавець</li>
+        <li>Заміщення (в.о.) — призначає лише керівник</li>
+        <li>Задачі: управлінські + внутрішні + <b>мої (керівника)</b></li>
+        <li>Задачі <b>без дедлайну</b> + контрольна дата</li>
+        <li>Щоденні звіти (ПІЗНО після 17:30)</li>
+        <li>Підсумок відділу (3–5 речень)</li>
+        <li>Люди/штат у начальника: хто здав/не здав</li>
+        <li>Керівник у “Звітах”: “Хто не здав” по відділах + “👥 Люди”</li>
+      </ul>
+    </div>
+    <div class="sep"></div>
+    <button class="btn primary" onclick="hideSheet()">OK</button>
+  `);
+}
+window.openAbout = openAbout;
+
+/* ===========================
+   ANALYTICS VIEW (demo)
+=========================== */
+function viewAnalytics(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){ UI.tab = ROUTES.CONTROL; return viewControl(); }
+  UI.tab = ROUTES.ANALYTICS;
+
+  const today = kyivDateStr();
+  const startWeek = addDays(today, -6);
+
+  const body = `
+    <div class="card">
+      <div class="card-h">
+        <div class="t">Аналітика (демо)</div>
+        <span class="badge b-blue">Тиждень</span>
+      </div>
+      <div class="card-b">
+        <div class="hint">
+          Це спрощена аналітика для MVP. Далі можна додати графіки, топ проблем, середній час закриття, навантаження по відділах.
+        </div>
+        <div class="sep"></div>
+
+        <div class="item" style="cursor:default;">
+          <div class="row"><div class="name">Підсумки відділів (за тиждень)</div>
+            <span class="badge b-violet mono">${STATE.deptSummaries.filter(s=>s.summaryDate>=startWeek && s.summaryDate<=today).length}</span>
+          </div>
+        </div>
+
+        <div class="item" style="cursor:default;">
+          <div class="row"><div class="name">Управлінські задачі: прострочені</div>
+            <span class="badge b-danger mono">${STATE.tasks.filter(t=>t.type==="managerial" && isOverdue(t)).length}</span>
+          </div>
+        </div>
+
+        <div class="item" style="cursor:default;">
+          <div class="row"><div class="name">Мої задачі: на контролі сьогодні</div>
+            <span class="badge b-warn mono">${STATE.tasks.filter(t=>t.type==="personal" && needsControl(t)).length}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const tabs = [
+    {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+    {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
+    {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+    {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+  ];
+
+  appShell({title:"Аналітика", subtitle:"Керівник", bodyHtml: body, showFab:false, fabAction:null, tabs});
+}
+
+/* ===========================
+   TASK LIST SHORTCUT
+=========================== */
+function openTaskList(filterKey){
+  UI.tab = ROUTES.TASKS;
+  UI.taskFilter = filterKey;
+  render();
+}
+window.openTaskList = openTaskList;
+
+/* ===========================
+   RENDER
+=========================== */
+function render(){
+  const user = currentSessionUser();
+  if(!user){
+    UI.route = ROUTES.LOGIN;
+    return viewLogin();
+  }
+
+  if(UI.route === ROUTES.PROFILE) return viewProfile();
+
+  if(UI.tab === ROUTES.CONTROL) return viewControl();
+  if(UI.tab === ROUTES.REPORTS) return viewReports();
+  if(UI.tab === ROUTES.TASKS) return viewTasks();
+  if(UI.tab === ROUTES.ANALYTICS) return viewAnalytics();
+
+  return viewControl();
+}
+
+/* ===========================
+   START
+=========================== */
+render();
+</script>
+</body>
+</html>
