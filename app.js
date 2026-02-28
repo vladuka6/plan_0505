@@ -58,13 +58,25 @@ function uid(prefix="id"){
 function migrateState(st){
   if(!st || typeof st !== "object") return null;
 
+  const rawTasks = Array.isArray(st.tasks) ? st.tasks : [];
+  const tasks = rawTasks.map(t=>{
+    if(!t || typeof t !== "object") return t;
+    const task = {...t};
+    task.controlAlways = !!task.controlAlways;
+    if(task.dueDate){
+      task.nextControlDate = null;
+      task.controlAlways = false;
+    }
+    return task;
+  });
+
   const next = {
     version: st.version ?? 0,
     session: st.session ?? { userId: null },
     departments: Array.isArray(st.departments) ? st.departments : [],
     users: Array.isArray(st.users) ? st.users : [],
     delegations: Array.isArray(st.delegations) ? st.delegations : [],
-    tasks: Array.isArray(st.tasks) ? st.tasks : [],
+    tasks,
     taskUpdates: Array.isArray(st.taskUpdates) ? st.taskUpdates : [],
     dailyReports: Array.isArray(st.dailyReports) ? st.dailyReports : [],
     deptSummaries: Array.isArray(st.deptSummaries) ? st.deptSummaries : [],
@@ -134,8 +146,8 @@ function seed(){
     ],
     delegations: [],
     tasks: [
-      {id:"T-2026-0004", type:"managerial", title:"Підготувати пропозиції", description:"Зібрати та узагальнити матеріали.", departmentId:"d2", responsibleUserId:"u_h2", priority:"високий", status:"в_процесі", startDate: today, dueDate: addDays(today, 6), nextControlDate: addDays(today, 3), createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
-      {id:"T-2026-0007", type:"managerial", title:"Оновити план-графік", description:"Актуалізувати план на тиждень.", departmentId:"d5", responsibleUserId:"u_h5", priority:"звичайний", status:"очікує_підтвердження", startDate: today, dueDate: addDays(today, 1), nextControlDate: addDays(today, 0), createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
+      {id:"T-2026-0004", type:"managerial", title:"Підготувати пропозиції", description:"Зібрати та узагальнити матеріали.", departmentId:"d2", responsibleUserId:"u_h2", priority:"високий", status:"в_процесі", startDate: today, dueDate: addDays(today, 6), nextControlDate: null, createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
+      {id:"T-2026-0007", type:"managerial", title:"Оновити план-графік", description:"Актуалізувати план на тиждень.", departmentId:"d5", responsibleUserId:"u_h5", priority:"звичайний", status:"очікує_підтвердження", startDate: today, dueDate: addDays(today, 1), nextControlDate: null, createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
       {id:"I-2026-0021", type:"internal", title:"Звірити залишки ЗІП", description:"Перевірити склад та оновити облік.", departmentId:"d2", responsibleUserId:"u_e21", priority:"звичайний", status:"блокер", startDate: today, dueDate: null, nextControlDate: addDays(today, 2), createdBy:"u_h2", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
       {id:"P-2026-0001", type:"personal", title:"Подзвонити постачальнику цементу", description:"Уточнити строки/логістику. Тримати на контролі.", departmentId:null, responsibleUserId:"u_boss", priority:"звичайний", status:"в_процесі", startDate: today, dueDate: null, nextControlDate: addDays(today, 1), createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
     ],
@@ -281,12 +293,45 @@ function statusBadgeClass(s){
   if(s==="в_процесі" || s==="на_контролі") return "b-blue";
   return "";
 }
+function controlMeta(task){
+  if(task.dueDate){
+    return {label:"—", title:"Контроль недоступний при дедлайні", exportValue:""};
+  }
+  if(task.controlAlways){
+    return {label:"постійно", title:"Контроль: постійно", exportValue:"постійно"};
+  }
+  if(task.nextControlDate){
+    return {
+      label: fmtDateShort(task.nextControlDate),
+      title: `Контроль ${fmtDate(task.nextControlDate)}`,
+      exportValue: task.nextControlDate
+    };
+  }
+  return {label:"—", title:"Без контролю", exportValue:""};
+}
+function controlSortKey(task){
+  if(task.dueDate) return "9999-99-99";
+  if(task.controlAlways) return "0000-00-00";
+  return task.nextControlDate || "9999-99-99";
+}
+function controlHint(task){
+  if(task.dueDate) return "Є дедлайн — контроль не використовується.";
+  if(task.controlAlways) return "Контроль: постійно (без дати).";
+  if(task.nextControlDate) return `Контроль на ${fmtDate(task.nextControlDate)}.`;
+  return "Контроль не задано.";
+}
+function lastBlockerUpdate(task){
+  return STATE.taskUpdates
+    .filter(u=>u.taskId===task.id && (u.status==="блокер" || u.status==="очікування"))
+    .sort((a,b)=>b.at.localeCompare(a.at))[0] || null;
+}
 function isOverdue(task){
   const today = kyivDateStr();
   return !!task.dueDate && task.dueDate < today && task.status !== "закрито" && task.status !== "скасовано";
 }
 function needsControl(task){
   const today = kyivDateStr();
+  if(task.controlAlways) return true;
   if(!task.nextControlDate) return false;
   if(task.status === "закрито" || task.status === "скасовано") return false;
   return task.nextControlDate <= today;
@@ -390,6 +435,7 @@ function taskExportRows(tasks){
     const dept = t.departmentId ? getDeptById(t.departmentId)?.name : "Особисто";
     const resp = getUserById(t.responsibleUserId)?.name || "";
     const creator = getUserById(t.createdBy)?.name || t.createdBy || "";
+    const ctrl = controlMeta(t);
     return [
       t.id,
       t.title,
@@ -400,7 +446,7 @@ function taskExportRows(tasks){
       t.priority || "",
       t.startDate || "",
       t.dueDate || "",
-      t.nextControlDate || "",
+      ctrl.exportValue || "",
       toDateOnly(t.updatedAt) || "",
       creator,
     ];
@@ -1355,7 +1401,7 @@ function viewReports(){
         </div>
       </div>
     `;
-  }).join("") : `<div class="hint">Немає звітів за обраний період.</div>`;
+  }).join("") : `<div class="hint">Немає звітів за обраний період. Спробуй інший фільтр або перевір, чи подані звіти.</div>`;
 
   const listSums = sums.length ? sums.map(s=>{
     const dept = getDeptById(s.departmentId);
@@ -1377,7 +1423,7 @@ function viewReports(){
         <div class="hint" style="margin-top:10px;">${htmlesc(shorten(s.text, 140))}</div>
       </div>
     `;
-  }).join("") : `<div class="hint">Немає підсумків за обраний період.</div>`;
+  }).join("") : `<div class="hint">Немає підсумків за обраний період. Спробуй інший фільтр або період.</div>`;
 
   const body = `
     <div class="card">
@@ -1571,8 +1617,8 @@ function viewTasks(){
     const ao = isOverdue(a) ? 0 : 1;
     const bo = isOverdue(b) ? 0 : 1;
     if(ao!==bo) return ao-bo;
-    const anc = a.nextControlDate || "9999-99-99";
-    const bnc = b.nextControlDate || "9999-99-99";
+    const anc = controlSortKey(a);
+    const bnc = controlSortKey(b);
     if(anc!==bnc) return anc.localeCompare(bnc);
     const ad = a.dueDate || "9999-99-99";
     const bd = b.dueDate || "9999-99-99";
@@ -1628,7 +1674,9 @@ function viewTasks(){
         ? {cls:"token-type-internal", label:"В"}
         : {cls:"token-type-personal", label:"О"};
     const dueShort = t.dueDate ? fmtDateShort(t.dueDate) : "—";
-    const ctrlShort = t.nextControlDate ? fmtDateShort(t.nextControlDate) : "—";
+    const ctrl = controlMeta(t);
+    const blocker = (t.status==="блокер" || t.status==="очікування") ? lastBlockerUpdate(t) : null;
+    const blockerNote = blocker?.note ? htmlesc(blocker.note).slice(0,120) : "";
     const overdueIcon = isOverdue(t) ? `<span class="task-token token-flag" title="Прострочено">🟠</span>` : "";
 
     return `
@@ -1641,17 +1689,25 @@ function viewTasks(){
               <span class="task-token token-dept" title="${htmlesc(dept ? dept.name : "Особисто")}">${htmlesc(deptShortLabel(dept))}</span>
               <span class="task-token token-user" title="${htmlesc(resp?.name ?? "")}${isActingHead(resp?.id) ? " (в.о.)" : ""}">👤</span>
               <span class="task-token token-due" title="${t.dueDate ? `Дедлайн ${fmtDate(t.dueDate)}` : "Без дедлайну"}">⏱ ${dueShort}</span>
-              <span class="task-token token-ctrl" title="${t.nextControlDate ? `Контроль ${fmtDate(t.nextControlDate)}` : "Без контролю"}">🎯 ${ctrlShort}</span>
+              <span class="task-token token-ctrl" title="${ctrl.title}">🎯 ${ctrl.label}</span>
               <span class="task-token ${typeMeta.cls}" title="Тип задачі">${typeMeta.label}</span>
               ${overdueIcon}
               </div>
             </div>
+            ${blockerNote ? `<div class="hint">⛔ ${blockerNote}</div>` : ``}
           </div>
           <div class="pill">›</div>
         </div>
       </div>
     `;
-  }).join("") : `<div class="hint">Немає задач за цим фільтром.</div>`;
+  }).join("") : (() => {
+    if(filter==="блокери") return `<div class="hint">Немає блокерів. Якщо є перешкода — постав статус “Блокер”.</div>`;
+    if(filter==="прострочені") return `<div class="hint">Немає прострочених задач.</div>`;
+    if(filter==="очікує_підтвердження") return `<div class="hint">Немає задач на підтвердження.</div>`;
+    if(filter==="без_оновлень") return `<div class="hint">Немає задач без оновлень &gt; 7 днів.</div>`;
+    if(filter==="закриті") return `<div class="hint">Немає закритих задач за цим фільтром.</div>`;
+    return `<div class="hint">Немає задач за цим фільтром.</div>`;
+  })();
 
   const body = `
     <div class="card">
@@ -1720,7 +1776,9 @@ function quickActionsForTask(u, t){
     }
     btns.push(`<button class="btn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="в_процесі">🔄 В процесі</button>`);
     btns.push(`<button class="btn warn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="блокер">⛔ Блокер</button>`);
-    btns.push(`<button class="btn ghost" data-action="setControlDate" data-arg1="${t.id}">🗓 Контроль</button>`);
+    if(!t.dueDate){
+      btns.push(`<button class="btn ghost" data-action="setControlDate" data-arg1="${t.id}">🗓 Контроль</button>`);
+    }
   } else {
     if(t.type==="internal"){
       btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Закрити</button>`);
@@ -1730,41 +1788,125 @@ function quickActionsForTask(u, t){
     }
     btns.push(`<button class="btn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="в_процесі">🔄 В процесі</button>`);
     btns.push(`<button class="btn warn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="блокер">⛔ Блокер</button>`);
-    btns.push(`<button class="btn ghost" data-action="setControlDate" data-arg1="${t.id}">🗓 Контроль</button>`);
+    if(!t.dueDate){
+      btns.push(`<button class="btn ghost" data-action="setControlDate" data-arg1="${t.id}">🗓 Контроль</button>`);
+    }
   }
 
   return `<div class="actions">${btns.join("")}</div>`;
 }
 
-function setTaskStatus(taskId, status){
+function openStatusReasonModal(taskId, status){
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!t) return;
+  const isBlocking = status === "блокер";
+  const title = isBlocking ? "Блокер: вкажи причину" : "Розблокування: причина";
+  const label = isBlocking ? "Причина блокера" : "Причина розблокування";
+  const hint = isBlocking
+    ? "Опиши, що заважає або кого/чого очікуємо."
+    : "Що змінилося і чому можна рухатись далі.";
+  const placeholder = isBlocking
+    ? "Наприклад: немає доступу / чекаємо підтвердження / бракує ресурсу."
+    : "Наприклад: отримали доступ / підтвердили рішення / ресурс з’явився.";
+
+  showSheet(title, `
+    <div class="hint">${hint}</div>
+    <div class="field">
+      <label>${label}</label>
+      <textarea id="statusReason" placeholder="${placeholder}"></textarea>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="submitStatusReason" data-arg1="${t.id}" data-arg2="${status}">Зберегти</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+
+function submitStatusReason(taskId, status){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+
+  const reason = (document.getElementById("statusReason")?.value || "").trim();
+  if(reason.length < 3){
+    showToast("Вкажи причину (мін. 3 символи).", "warn");
+    return;
+  }
+
+  const {isDeptHeadLike} = asDeptRole(u);
+  const isBoss = (u.role==="boss");
+  if(!(isBoss || isDeptHeadLike)){
+    showSheet("Немає прав", `<div class="hint">Тільки начальник відділу (або в.о.) може змінювати статуси.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(!isBoss && t.departmentId !== u.departmentId){
+    showSheet("Немає прав", `<div class="hint">Ви не маєте доступу до іншого відділу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(!isBoss && t.type==="managerial" && status==="закрито"){
+    showSheet("Обмеження", `<div class="hint">Управлінську задачу закриває тільки керівник. Використайте “Запит закриття”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const wasBlocked = (t.status==="блокер" || t.status==="очікування");
+  const isBlocking = (status === "блокер");
+  const stillBlocked = (status==="блокер" || status==="очікування");
+  let note = `Статус → ${statusLabel(status)}: ${reason}`;
+  if(isBlocking){
+    note = `Блокер: ${reason}`;
+  } else if(wasBlocked && !stillBlocked){
+    note = `Розблоковано → ${statusLabel(status)}: ${reason}`;
+  }
+
+  updateTask(taskId, {status}, u.id, note);
+  hideSheet();
+  render();
+  showToast(`Статус оновлено: ${statusLabel(status)}`, "ok");
+}
+
+function setTaskStatus(taskId, status, bypassConfirm=false){
   const u = currentSessionUser();
   const t = STATE.tasks.find(x=>x.id===taskId);
   if(!t) return;
 
   const {isDeptHeadLike} = asDeptRole(u);
 
-  if(u.role==="boss"){
-    updateTask(taskId, {status}, u.id, `Статус → ${statusLabel(status)}`);
-    render();
-    showToast(`Статус оновлено: ${statusLabel(status)}`, "ok");
-    return;
-  }
-
-  if(!isDeptHeadLike){
+  if(!(u.role==="boss" || isDeptHeadLike)){
     showSheet("Немає прав", `<div class="hint">Тільки начальник відділу (або в.о.) може змінювати статуси.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
-  if(t.departmentId !== u.departmentId){
+  if(u.role!=="boss" && t.departmentId !== u.departmentId){
     showSheet("Немає прав", `<div class="hint">Ви не маєте доступу до іншого відділу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
-  if(t.type==="managerial" && status==="закрито"){
+  if(u.role!=="boss" && t.type==="managerial" && status==="закрито"){
     showSheet("Обмеження", `<div class="hint">Управлінську задачу закриває тільки керівник. Використайте “Запит закриття”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
+  if(!bypassConfirm && u.role==="boss" && t.type==="managerial" && status==="закрито"){
+    showSheet("Підтвердити закриття", `
+      <div class="hint">Закрити управлінську задачу <b>${htmlesc(t.title)}</b>?</div>
+      <div class="actions" style="margin-top:14px;">
+        <button class="btn ok" data-action="confirmTaskClose" data-arg1="${t.id}">✅ Так, закрити</button>
+        <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+      </div>
+    `);
+    return;
+  }
+
+  const isBlocking = (status === "блокер");
+  const isUnblocking = (t.status==="блокер" || t.status==="очікування") && !(status==="блокер" || status==="очікування");
+  if(isBlocking || isUnblocking){
+    return openStatusReasonModal(taskId, status);
+  }
+
   updateTask(taskId, {status}, u.id, `Статус → ${statusLabel(status)}`);
   render();
   showToast(`Статус оновлено: ${statusLabel(status)}`, "ok");
+}
+
+function confirmTaskClose(taskId){
+  setTaskStatus(taskId, "закрито", true);
 }
 
 function setControlDate(taskId){
@@ -1777,12 +1919,20 @@ function setControlDate(taskId){
     showSheet("Немає прав", `<div class="hint">Тільки керівник або начальник відділу (в.о.) може змінювати контрольну дату.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
+  if(t.dueDate){
+    showSheet("Контроль недоступний", `<div class="hint">Для задач з дедлайном контроль не використовується.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
 
+  const isAlways = !!t.controlAlways;
   showSheet("Контрольна дата", `
-    <div class="hint">Контрольна дата — коли потрібно повернутися до задачі.</div>
+    <div class="hint">Контроль — коли потрібно повернутися до задачі (або постійний контроль).</div>
     <div class="field">
       <label>Контроль</label>
-      <input id="ctrlDate" type="date" value="${t.nextControlDate ?? kyivDateStr()}" />
+      <input id="ctrlDate" type="date" value="${isAlways ? "" : (t.nextControlDate ?? kyivDateStr())}" ${isAlways ? "disabled" : ""} />
+    </div>
+    <div class="field">
+      <label><input id="ctrlAlways" type="checkbox" data-change="toggleCtrlAlways" ${isAlways ? "checked" : ""} /> Постійний контроль (без дати)</label>
     </div>
     <div class="field">
       <label><input id="ctrlClear" type="checkbox" /> Прибрати контрольну дату</label>
@@ -1796,12 +1946,31 @@ function setControlDate(taskId){
 
 function applyControlDate(taskId){
   const u = currentSessionUser();
-  const clear = document.getElementById("ctrlClear").checked;
-  const d = clear ? null : (document.getElementById("ctrlDate").value || null);
-  updateTask(taskId, {nextControlDate: d}, u.id, `Контроль → ${d ? fmtDate(d) : "без контролю"}`);
+  const clear = document.getElementById("ctrlClear")?.checked;
+  const always = document.getElementById("ctrlAlways")?.checked;
+  const d = (document.getElementById("ctrlDate")?.value || null);
+
+  let nextControlDate = null;
+  let controlAlways = false;
+  let note = "Контроль → без контролю";
+  let toast = "Контроль прибрано";
+
+  if(!clear){
+    if(always){
+      controlAlways = true;
+      note = "Контроль → постійно";
+      toast = "Контроль: постійно";
+    } else if(d){
+      nextControlDate = d;
+      note = `Контроль → ${fmtDate(d)}`;
+      toast = `Контроль: ${fmtDate(d)}`;
+    }
+  }
+
+  updateTask(taskId, {nextControlDate, controlAlways}, u.id, note);
   hideSheet();
   render();
-  showToast(d ? `Контроль: ${fmtDate(d)}` : "Контроль прибрано", "info");
+  showToast(toast, "info");
 }
 
 function openTask(taskId){
@@ -1821,6 +1990,8 @@ function openTask(taskId){
   const dept = t.departmentId ? getDeptById(t.departmentId) : null;
   const resp = getUserById(t.responsibleUserId);
   const upd = STATE.taskUpdates.filter(x=>x.taskId===t.id).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,8);
+  const ctrl = controlMeta(t);
+  const ctrlHint = controlHint(t);
 
   showSheet("Картка задачі", `
     <div class="item task-sheet-compact" style="cursor:default;">
@@ -1838,9 +2009,10 @@ function openTask(taskId){
         <span class="task-token token-dept" title="Відділ">${htmlesc(dept ? deptShortLabel(dept) : "Особ.")}</span>
         <span class="task-token token-user" title="Відповідальний">👤</span>
         <span class="task-token token-due" title="${t.dueDate ? `Дедлайн ${fmtDate(t.dueDate)}` : "Без дедлайну"}">⏱ ${t.dueDate ? fmtDateShort(t.dueDate) : "—"}</span>
-        <span class="task-token token-ctrl" title="${t.nextControlDate ? `Контроль ${fmtDate(t.nextControlDate)}` : "Без контролю"}">🎯 ${t.nextControlDate ? fmtDateShort(t.nextControlDate) : "—"}</span>
+        <span class="task-token token-ctrl" title="${ctrl.title}">🎯 ${ctrl.label}</span>
         <span class="task-token">${htmlesc(t.priority)}</span>
       </div>
+      <div class="hint">${ctrlHint}</div>
       <details class="task-disclosure" ${upd.length ? "" : "open"}>
         <summary>Оновлення (${upd.length})</summary>
         <div class="hint">
@@ -1866,14 +2038,52 @@ let createTaskUserOptions = null;
 function toggleNoDue(){
   const noDueEl = document.getElementById("noDue");
   const due = document.getElementById("tDue");
+  const ctrl = document.getElementById("tCtrl");
+  const ctrlAlways = document.getElementById("tCtrlAlways");
+  const ctrlBlock = document.getElementById("ctrlBlock");
   if(!noDueEl || !due) return;
 
   const no = noDueEl.checked;
   due.disabled = no;
   if(no){
     due.value = "";
-  } else if(!due.value){
-    due.value = addDays(kyivDateStr(), 3);
+    if(ctrl){
+      if(!ctrl.value && !(ctrlAlways && ctrlAlways.checked)){
+        ctrl.value = addDays(kyivDateStr(), 1);
+      }
+      ctrl.disabled = !!(ctrlAlways && ctrlAlways.checked);
+    }
+    if(ctrlAlways) ctrlAlways.disabled = false;
+    if(ctrlBlock) ctrlBlock.classList.remove("disabled");
+  } else {
+    if(!due.value){
+      due.value = addDays(kyivDateStr(), 3);
+    }
+    if(ctrl){
+      ctrl.value = "";
+      ctrl.disabled = true;
+    }
+    if(ctrlAlways){
+      ctrlAlways.checked = false;
+      ctrlAlways.disabled = true;
+    }
+    if(ctrlBlock) ctrlBlock.classList.add("disabled");
+  }
+}
+function toggleCtrlAlways(){
+  const always = document.getElementById("tCtrlAlways") || document.getElementById("ctrlAlways");
+  const ctrl = document.getElementById("tCtrl") || document.getElementById("ctrlDate");
+  if(!always || !ctrl) return;
+
+  if(always.checked){
+    ctrl.value = "";
+    ctrl.disabled = true;
+    return;
+  }
+
+  ctrl.disabled = false;
+  if(!ctrl.value){
+    ctrl.value = (ctrl.id === "tCtrl") ? addDays(kyivDateStr(), 1) : kyivDateStr();
   }
 }
 function refreshRespOptions(){
@@ -1927,7 +2137,7 @@ function openCreateTask(kind){
         kind==="internal" ? "Внутрішня: створює начальник/в.о., закриває начальник/в.о." :
         "Моя задача: для себе (дзвінки/нагадування/контроль)."
       }
-      <br/>Можна <b>без дедлайну</b> — тоді використовуй <b>контрольну дату</b>.
+      <br/>Контроль доступний лише <b>без дедлайну</b> (можна і <b>постійний контроль</b>).
     </div>
 
     <div class="field">
@@ -1980,9 +2190,15 @@ function openCreateTask(kind){
       <label><input id="noDue" type="checkbox" data-change="toggleNoDue" /> Без дедлайну</label>
     </div>
 
-    <div class="field">
-      <label>Контрольна дата (опційно)</label>
-      <input id="tCtrl" type="date" value="${addDays(today, 1)}" />
+    <div id="ctrlBlock">
+      <div class="field">
+        <label>Контрольна дата</label>
+        <input id="tCtrl" type="date" value="${addDays(today, 1)}" />
+      </div>
+      <div class="field">
+        <label><input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" /> Постійний контроль (без дати)</label>
+      </div>
+      <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
     </div>
 
     <div class="actions" style="margin-top:14px;">
@@ -2005,8 +2221,9 @@ function createTaskNow(kind){
   const desc = document.getElementById("tDesc").value.trim();
   const pr = document.getElementById("tPr").value;
   const noDue = document.getElementById("noDue").checked;
+  const ctrlAlways = noDue ? !!document.getElementById("tCtrlAlways")?.checked : false;
   const due = noDue ? null : (document.getElementById("tDue").value || null);
-  const ctrl = (document.getElementById("tCtrl").value || null);
+  const ctrl = (noDue && !ctrlAlways) ? (document.getElementById("tCtrl").value || null) : null;
 
   const today = kyivDateStr();
 
@@ -2039,6 +2256,7 @@ function createTaskNow(kind){
     startDate: today,
     dueDate: due,
     nextControlDate: ctrl,
+    controlAlways: ctrlAlways,
     createdBy: u.id,
     createdAt: nowIsoKyiv(),
     updatedAt: nowIsoKyiv()
@@ -2194,6 +2412,24 @@ function openDelegations(){
 }
 
 function cancelDelegationUi(id){
+  const d = STATE.delegations.find(x=>x.id===id);
+  if(!d){
+    cancelDelegation(id);
+    hideSheet();
+    openDelegations();
+    return;
+  }
+  const dept = getDeptById(d.departmentId)?.name || "Відділ";
+  const acting = getUserById(d.actingUserId)?.name || "—";
+  showSheet("Скасувати заміщення", `
+    <div class="hint">Скасувати заміщення у <b>${htmlesc(dept)}</b> (в.о.: <b>${htmlesc(acting)}</b>)?</div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn danger" data-action="confirmCancelDelegation" data-arg1="${d.id}">Скасувати</button>
+      <button class="btn ghost" data-action="hideSheet">Назад</button>
+    </div>
+  `);
+}
+function confirmCancelDelegation(id){
   cancelDelegation(id);
   hideSheet();
   openDelegations();
@@ -2564,6 +2800,8 @@ function openHelp(){
 const ACTIONS = {
   applyControlDate,
   cancelDelegationUi,
+  confirmCancelDelegation,
+  confirmTaskClose,
   createDelegationNow,
   createTaskNow,
   goProfile,
@@ -2594,6 +2832,7 @@ const ACTIONS = {
   setTaskStatus,
   submitDeptSummaryNow,
   submitReportNow,
+  submitStatusReason,
   exportTasksExcelNow,
   toggleTheme,
 };
@@ -2603,6 +2842,7 @@ const CHANGE_ACTIONS = {
   setTaskSearchFromInput,
   setReportsControlDateFromInput,
   toggleNoDue,
+  toggleCtrlAlways,
 };
 
 function runMappedAction(name, arg1, arg2){
