@@ -77,6 +77,13 @@
       font-size: 12px;border: 1px solid rgba(150,170,205,.55);
       background: rgba(255,255,255,.82);color: var(--muted);
     }
+    .dept-badge{
+      display:inline-flex;align-items:center;justify-content:center;
+      min-width: 30px;height: 22px;padding: 0 8px;border-radius: 999px;
+      border:1px solid rgba(110,168,254,.45);
+      background: rgba(110,168,254,.14);
+      color:#2d5fbd;font-weight:900;font-size:12px;
+    }
     .b-danger{border-color: rgba(255,92,122,.35); color: #ffb3c0; background: rgba(255,92,122,.12);}
     .b-warn{border-color: rgba(255,204,102,.35); color: #ffe0a3; background: rgba(255,204,102,.12);}
     .b-ok{border-color: rgba(69,230,154,.35); color: #b8ffdf; background: rgba(69,230,154,.12);}
@@ -124,15 +131,36 @@
       cursor:pointer;font-size: 12px;user-select:none;
     }
     .chip.active{background: rgba(110,168,254,.16);border-color: rgba(110,168,254,.45);color: #2d5fbd;}
+    .chip-ico{display:none;font-size:14px;line-height:1;}
+    .chip-text{display:inline;}
+    .task-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom: 5px;}
+    .search-inline{margin-top:0;}
+    .search-inline label{display:none;}
+    body.scope-all .task-meta .token-user{display:none;}
+    body.scope-all .task-item.has-due .task-meta .token-ctrl{display:none;}
+    body.scope-all .task-item.no-due .task-meta .token-due{display:none;}
+    body.scope-dept .task-meta .token-dept{display:none;}
+    body.scope-dept .task-meta .token-user{display:none;}
+    body.scope-dept .task-item.no-due .task-meta .token-due{display:none;}
+    .control-lines{display:flex;flex-direction:column;gap:2px;}
+    .control-counts{display:flex;gap:6px;flex-wrap:nowrap;}
+    .control-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .control-block{display:flex;flex-direction:column;gap:10px;}
+    .chips.dept-chips{overflow:visible;flex-wrap:wrap;}
     .disabled{opacity:.6;}
 
     .list{display:flex;flex-direction:column;gap:10px;margin-top: 12px;}
     .item{
       padding: 12px;border-radius: var(--radius2);
       background: rgba(255,255,255,.72);
-      border: 1px solid rgba(150,170,205,.45);
+      /* border: 1px solid rgba(150,170,205,.45); */
       cursor:pointer;
     }
+    .task-item{padding-top:0;padding-bottom:0;position:relative;border:1px solid transparent;}
+    .task-item.has-due{border-color: rgba(255,140,90,.45);}
+    .task-item.ctrl-date{border-color: rgba(110,168,254,.45);}
+    .task-item.ctrl-always{border-color: transparent;}
+    .task-item.has-due .task-line .name{color:#2f9a5d;}
     .item:active{transform: scale(.99)}
     .item .row{display:flex;align-items:flex-start;justify-content: space-between;gap:10px;}
     .item .row .name{font-weight:900;font-size:14px;line-height:1.2;}
@@ -244,7 +272,7 @@
       display:flex; align-items:center; justify-content:space-between; gap:10px;
       font-size: 12px;font-weight: 900;
     }
-    .field{display:flex; flex-direction:column;gap:8px;margin-top: 10px;}
+    .field{display:flex; flex-direction:column;gap:8px;}
     label{font-size: 12px; color: var(--muted); font-weight: 900;}
     input, select, textarea{
       width:100%;
@@ -274,11 +302,9 @@
     }
     .task-disclosure summary::-webkit-details-marker{display:none;}
     .task-disclosure summary::before{
-      content:"▸";
-      color:var(--muted);
-      transition: transform .15s ease;
+      content:"";
+      display:none;
     }
-    .task-disclosure[open] summary::before{transform:rotate(90deg);}
     .task-disclosure{display:block;}
     .task-disclosure > *:not(summary){margin-top:8px;}
     .task-meta{
@@ -288,7 +314,16 @@
       gap:6px;
     }
     .task-line{display:block;}
-    .task-num{color:var(--muted);font-size:11px;}
+    .task-title{display:block;min-width:0;}
+    .task-note{
+      font-size:12px;
+      color: #d04a4a;
+      margin-top:6px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .task-num{color:var(--muted);}
     .task-title-type-managerial{color:#2d5fbd;}
     .task-title-type-internal{color:#4b5f82;}
     .task-title-type-personal{color:#7151a8;}
@@ -300,7 +335,7 @@
       border-radius: 999px;
       font-size: 12px;
       line-height: 1.2;
-      border:1px solid rgba(150,170,205,.45);
+      /* border:1px solid rgba(150,170,205,.45); */
       background: rgba(255,255,255,.84);
       color: var(--muted);
       white-space: nowrap;
@@ -317,9 +352,73 @@
         justify-content:space-between;
         gap:12px;
       }
+      .task-title{
+        display:flex;
+        align-items:center;
+        gap:8px;
+        min-width:0;
+        flex:1;
+      }
+      .task-title .name{
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+      }
+      .task-note{
+        margin-top:0;
+        max-width:320px;
+      }
       .task-line .task-meta{
         margin-top:0;
         flex-wrap:nowrap;
+      }
+    }
+    @media (max-width: 640px){
+      .task-toolbar{flex-direction:column;align-items:stretch;}
+      .search-inline label{display:block;}
+      .chip-ico{display:inline-flex;}
+      .chip-text{display:none;}
+      .chips.dept-chips{
+        display:grid;
+        grid-template-columns: repeat(4, minmax(0,1fr));
+        gap:8px;
+        padding-bottom:0;
+      }
+      .chips.dept-chips .chip{
+        justify-content:center;
+      }
+      .control-counts{display:none;}
+      .control-lines{flex-direction:row;flex-wrap:wrap;gap:8px;}
+      .control-grid{grid-template-columns:1fr;}
+    }
+    @media (max-width: 640px){
+      body.compact-tasks .task-line{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:8px;
+      }
+      body.compact-tasks .task-line .name{
+        flex:1;
+        min-width:0;
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+      }
+      body.compact-tasks .task-line .task-meta{
+        margin-top:0;
+        flex-wrap:nowrap;
+      }
+      body.compact-tasks .task-line .task-meta .token-dept,
+      body.compact-tasks .task-line .task-meta .token-user,
+      body.compact-tasks .task-line .task-meta .token-flag{
+        display:none;
+      }
+      body.compact-tasks .task-item.has-due .task-line .task-meta .token-ctrl{
+        display:none;
+      }
+      body.compact-tasks .task-item.no-due .task-line .task-meta .token-due{
+        display:none;
       }
     }
     .analytics-grid{display:grid;gap:10px;}

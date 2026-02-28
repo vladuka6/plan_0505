@@ -66,6 +66,8 @@ function migrateState(st){
     if(task.dueDate){
       task.nextControlDate = null;
       task.controlAlways = false;
+    } else if(task.controlAlways){
+      task.nextControlDate = null;
     }
     return task;
   });
@@ -194,6 +196,22 @@ function deptShortLabel(dept){
   const m = dept.name.match(/№\s*\d+/);
   return m ? m[0].replace(/\s+/g,"") : dept.name;
 }
+function deptBadgeHtml(dept){
+  const name = dept?.name || "Відділ";
+  const short = deptShortLabel(dept);
+  return `<span class="dept-badge" title="${htmlesc(name)}">${htmlesc(short)}</span>`;
+}
+function getDeptResponsibleOptions(deptId){
+  return STATE.users.filter(x=>x.active && x.departmentId===deptId && (x.role==="executor" || x.role==="dept_head"));
+}
+function canEditTask(u, t){
+  if(!u || !t) return false;
+  if(u.role==="boss") return true;
+  const {isDeptHeadLike} = asDeptRole(u);
+  if(!isDeptHeadLike) return false;
+  if(t.type==="personal" || t.type==="managerial") return false;
+  return t.departmentId === u.departmentId;
+}
 function shorten(s, max=70){
   s = (s || "").trim();
   if(!s) return "—";
@@ -295,7 +313,7 @@ function statusBadgeClass(s){
 }
 function controlMeta(task){
   if(task.dueDate){
-    return {label:"—", title:"Контроль недоступний при дедлайні", exportValue:""};
+    return {label:"", title:"Контроль недоступний при дедлайні", exportValue:""};
   }
   if(task.controlAlways){
     return {label:"постійно", title:"Контроль: постійно", exportValue:"постійно"};
@@ -718,6 +736,9 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
   const deadlineInfo = weekend ? "Вихідний" : "Дедлайн звіту: 17:30";
   const themeIcon = UI.theme === "dark" ? "☀️" : "🌙";
   const themeTitle = UI.theme === "dark" ? "Світла тема" : "Темна тема";
+  const compactTasks = !!(u && u.role==="boss" && UI.tab===ROUTES.TASKS && UI.taskDeptFilter && !["all","personal"].includes(UI.taskDeptFilter));
+  const scopeAll = !!(u && u.role==="boss" && UI.tab===ROUTES.TASKS && UI.taskDeptFilter==="all");
+  const scopeDept = !!(u && UI.tab===ROUTES.TASKS && (u.role!=="boss" || (u.role==="boss" && UI.taskDeptFilter && !["all","personal"].includes(UI.taskDeptFilter))));
 
   root.innerHTML = `
     <div class="app">
@@ -752,6 +773,10 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
     </div>
   `;
 
+  document.body.classList.toggle("role-boss", !!(u && u.role==="boss"));
+  document.body.classList.toggle("compact-tasks", compactTasks);
+  document.body.classList.toggle("scope-all", scopeAll);
+  document.body.classList.toggle("scope-dept", scopeDept);
   if(showFab){
     document.getElementById("fab").addEventListener("click", fabAction);
   }
@@ -779,6 +804,7 @@ function renderTabs(tabs){
 function viewLogin(){
   const themeIcon = UI.theme === "dark" ? "☀️" : "🌙";
   const themeTitle = UI.theme === "dark" ? "Світла тема" : "Темна тема";
+  document.body.classList.remove("role-boss");
   const html = `
     <div class="app">
       <div class="topbar">
@@ -884,6 +910,22 @@ function viewControl(){
   const tasksVis = getVisibleTasksForUser(u);
   const requestClose = tasksVis.filter(t=>t.type==="managerial" && t.status==="очікує_підтвердження");
   const overdue = tasksVis.filter(t=>isOverdue(t));
+  const notBlocked = (t)=>!["блокер","очікування"].includes(t.status);
+  const isDeptTask = (t)=>!!t.departmentId;
+  const controlTasksDate = tasksVis.filter(t=>t.nextControlDate && !t.controlAlways && notBlocked(t) && isDeptTask(t));
+  const controlTasksAlways = tasksVis.filter(t=>t.controlAlways && !t.nextControlDate && notBlocked(t) && isDeptTask(t));
+  const controlByDeptDate = (u.role==="boss")
+    ? STATE.departments.map(d=>{
+        const list = controlTasksDate.filter(t=>t.departmentId===d.id);
+        return {dept:d, count:list.length};
+      }).filter(x=>x.count>0)
+    : [];
+  const controlByDeptAlways = (u.role==="boss")
+    ? STATE.departments.map(d=>{
+        const list = controlTasksAlways.filter(t=>t.departmentId===d.id);
+        return {dept:d, count:list.length};
+      }).filter(x=>x.count>0)
+    : [];
   const blockers = tasksVis.filter(t=>["блокер","очікування"].includes(t.status));
   const stale = tasksVis.filter(t=>staleTask(t, 7));
   const activeDelegations = (u.role==="boss") ? STATE.delegations.filter(d=>d.status==="активне") : [];
@@ -904,6 +946,25 @@ function viewControl(){
       </div>
       <div class="card-b">
         <div class="statlist">
+          ${u.role==="boss" ? `
+          <div class="stat" data-action="openControlByDept">
+            <div class="l">
+              <div class="k">🎯 На контролі по відділах</div>
+              <div class="d control-lines">
+                ${
+                  (!controlByDeptDate.length && !controlByDeptAlways.length)
+                    ? `<span>Немає задач на контролі</span>`
+                    : ``
+                }
+              </div>
+            </div>
+            <div class="r control-counts">
+              <span class="pill mono">📅 ${controlTasksDate.length}</span>
+              <span class="pill mono">♾️ ${controlTasksAlways.length}</span>
+            </div>
+          </div>
+          ` : ``}
+
           <div class="stat" data-action="openMissing">
             <div class="l">
               <div class="k">🔴 Не здали до 17:30</div>
@@ -1157,7 +1218,7 @@ function openDeptPeopleBoss(deptId, dateStr){
     `;
   }).join("");
 
-  showSheet(`Люди — ${dept?.name ?? ""}`, `
+  showSheet(`Люди — ${deptShortLabel(dept)}`, `
     <div class="hint">
       Дата: <span class="mono">${fmtDate(day)}</span>.
       ${weekend ? "Вихідний — звіти не обов’язкові." : "Очікуємо звіт від виконавців."}
@@ -1232,6 +1293,10 @@ function openReportForm(){
     <div class="hint">
       Звіт за <span class="mono">${fmtDate(date)}</span>.
       ${weekend ? "Сьогодні вихідний — подання не обов’язкове." : (late ? "<b>Увага:</b> після 17:30 буде “ПІЗНО”." : "Подай до 17:30, щоб було вчасно.")}
+    </div>
+    <div class="actions" style="margin-top:10px;">
+      <button class="btn ghost" data-action="applyReportTemplate">🧩 Шаблон</button>
+      <button class="btn ghost" data-action="autoFillReport">⚡ Авто з задач</button>
     </div>
 
     <div class="field">
@@ -1362,7 +1427,7 @@ function viewReports(){
           <div class="item" style="cursor:default;">
             <div class="row">
               <div>
-                <div class="name">${htmlesc(x.deptName)}</div>
+            <div class="name">${deptBadgeHtml(getDeptById(x.deptId))}</div>
                 <div class="sub">
                   ${missBadge} ${lateBadge}
                   <span class="pill">Виконавців: <span class="mono">${x.expected}</span></span>
@@ -1386,7 +1451,7 @@ function viewReports(){
       <div class="item" data-action="openReport" data-arg1="${r.id}">
         <div class="row">
           <div>
-            <div class="name">${htmlesc(dept?.name ?? "")} — ${htmlesc(usr?.name ?? "")}</div>
+            <div class="name">${deptBadgeHtml(dept)} — ${htmlesc(usr?.name ?? "")}</div>
             <div class="sub">
               ${badge}
               <span class="pill mono">${fmtDate(r.reportDate)}</span>
@@ -1410,7 +1475,7 @@ function viewReports(){
       <div class="item" data-action="openDeptSummary" data-arg1="${s.id}">
         <div class="row">
           <div>
-            <div class="name">🧾 Підсумок — ${htmlesc(dept?.name ?? "")}</div>
+            <div class="name">🧾 Підсумок — ${deptBadgeHtml(dept)}</div>
             <div class="sub">
               <span class="badge b-violet">Підсумок відділу</span>
               <span class="pill mono">${fmtDate(s.summaryDate)}</span>
@@ -1611,6 +1676,44 @@ function viewTasks(){
     const hay = `${t.title} ${t.id} ${dept} ${resp}`.toLowerCase();
     return hay.includes(taskSearch);
   }).sort((a,b)=>{
+    const isDeptScope = (u.role!=="boss") || (u.role==="boss" && deptFilter!=="all" && deptFilter!=="personal");
+    if(u.role==="boss" && deptFilter==="all"){
+      const deptName = (t)=> t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
+      const deptKey = (t)=> `${t.departmentId ? "0" : "1"}_${deptName(t)}`;
+      const dateKey = (t)=>{
+        if(t.dueDate) return t.dueDate;
+        if(t.controlAlways) return "0000-00-00";
+        return t.nextControlDate || "9999-99-99";
+      };
+      const dk = deptKey(a).localeCompare(deptKey(b));
+      if(dk!==0) return dk;
+      const dka = dateKey(a);
+      const dkb = dateKey(b);
+      if(dka!==dkb) return dka.localeCompare(dkb);
+      return (a.title || "").localeCompare(b.title || "");
+    }
+    if(isDeptScope){
+      const bucket = (t)=>{
+        if(t.dueDate) return 0;
+        if(t.nextControlDate) return 1;
+        if(t.controlAlways) return 2;
+        return 3;
+      };
+      const ba = bucket(a);
+      const bb = bucket(b);
+      if(ba!==bb) return ba - bb;
+      const dateKey = (t)=>{
+        if(t.dueDate) return t.dueDate;
+        if(t.nextControlDate) return t.nextControlDate;
+        if(t.controlAlways) return "0000-00-00";
+        return "9999-99-99";
+      };
+      const dka = dateKey(a);
+      const dkb = dateKey(b);
+      if(dka!==dkb) return dka.localeCompare(dkb);
+      return (a.title || "").localeCompare(b.title || "");
+    }
+
     const ar = (a.status==="очікує_підтвердження") ? 0 : 1;
     const br = (b.status==="очікує_підтвердження") ? 0 : 1;
     if(ar!==br) return ar-br;
@@ -1627,35 +1730,33 @@ function viewTasks(){
 
   const chips = `
     <div class="chips">
-      <div class="chip ${filter==="активні"?"active":""}" data-action="setTaskFilter" data-arg1="активні">Активні</div>
-      <div class="chip ${filter==="очікує_підтвердження"?"active":""}" data-action="setTaskFilter" data-arg1="очікує_підтвердження">Очікує підтвердження</div>
-      <div class="chip ${filter==="прострочені"?"active":""}" data-action="setTaskFilter" data-arg1="прострочені">Прострочені</div>
-      <div class="chip ${filter==="блокери"?"active":""}" data-action="setTaskFilter" data-arg1="блокери">Блокери</div>
-      <div class="chip ${filter==="без_оновлень"?"active":""}" data-action="setTaskFilter" data-arg1="без_оновлень">Без оновлень</div>
-      <div class="chip ${filter==="закриті"?"active":""}" data-action="setTaskFilter" data-arg1="закриті">Закриті</div>
+      <div class="chip ${filter==="активні"?"active":""}" data-action="setTaskFilter" data-arg1="активні"><span class="chip-ico">📌</span><span class="chip-text">Активні</span></div>
+      <div class="chip ${filter==="очікує_підтвердження"?"active":""}" data-action="setTaskFilter" data-arg1="очікує_підтвердження"><span class="chip-ico">🟣</span><span class="chip-text">Очікує підтвердження</span></div>
+      <div class="chip ${filter==="прострочені"?"active":""}" data-action="setTaskFilter" data-arg1="прострочені"><span class="chip-ico">🟠</span><span class="chip-text">Прострочені</span></div>
+      <div class="chip ${filter==="блокери"?"active":""}" data-action="setTaskFilter" data-arg1="блокери"><span class="chip-ico">⛔</span><span class="chip-text">Блокери</span></div>
+      <div class="chip ${filter==="без_оновлень"?"active":""}" data-action="setTaskFilter" data-arg1="без_оновлень"><span class="chip-ico">⏳</span><span class="chip-text">Без оновлень</span></div>
+      <div class="chip ${filter==="закриті"?"active":""}" data-action="setTaskFilter" data-arg1="закриті"><span class="chip-ico">✅</span><span class="chip-text">Закриті</span></div>
     </div>
   `;
   const deptChips = (u.role==="boss") ? `
-    <div class="chips">
-      <div class="chip ${deptFilter==="all"?"active":""}" data-action="setTaskDeptFilter" data-arg1="all">Загальні</div>
-      <div class="chip ${deptFilter==="personal"?"active":""}" data-action="setTaskDeptFilter" data-arg1="personal">Мої</div>
+    <div class="chips dept-chips">
       ${STATE.departments.map(d=>{
         const c = getVisibleTasksForUser(u).filter(t=>t.departmentId===d.id && t.type!=="personal").length;
         const active = deptFilter===d.id ? "active" : "";
-        return `<div class="chip ${active}" data-action="setTaskDeptFilter" data-arg1="${d.id}">${htmlesc(d.name)} <span class="mono">${c}</span></div>`;
+        return `<div class="chip ${active}" data-action="setTaskDeptFilter" data-arg1="${d.id}">${deptBadgeHtml(d)} <span class="mono">${c}</span></div>`;
       }).join("")}
     </div>
   ` : ``;
   const searchUi = `
-    <div class="field" style="margin-top:10px;">
+    <div class="field search-inline">
       <label>Пошук задач</label>
       <div class="row" style="gap:8px;">
         <input id="taskSearchInput" type="text" value="${htmlesc(UI.taskSearch)}" placeholder="Назва / відділ / виконавець" data-change="setTaskSearchFromInput" />
         ${UI.taskSearch ? `<button class="btn ghost" data-action="clearTaskSearch">Скинути</button>` : ``}
       </div>
     </div>
-    <div class="hint">Показано: <span class="mono">${filtered.length}</span> із <span class="mono">${tasks.length}</span></div>
   `;
+  const searchHint = `<div class="hint">Показано: <span class="mono">${filtered.length}</span> із <span class="mono">${tasks.length}</span></div>`;
 
   const list = filtered.length ? filtered.map((t, idx)=>{
     const dept = t.departmentId ? getDeptById(t.departmentId) : null;
@@ -1679,24 +1780,26 @@ function viewTasks(){
     const blockerNote = blocker?.note ? htmlesc(blocker.note).slice(0,120) : "";
     const overdueIcon = isOverdue(t) ? `<span class="task-token token-flag" title="Прострочено">🟠</span>` : "";
 
+    const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
-      <div class="item task-item">
+      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass}">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">
-              <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${htmlesc(t.title)}</div>
+              <div class="task-title">
+                <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${htmlesc(t.title)}</div>
+                ${blockerNote ? `<div class="task-note">⛔ ${blockerNote}</div>` : ``}
+              </div>
               <div class="task-meta">
               <span class="task-token token-dept" title="${htmlesc(dept ? dept.name : "Особисто")}">${htmlesc(deptShortLabel(dept))}</span>
               <span class="task-token token-user" title="${htmlesc(resp?.name ?? "")}${isActingHead(resp?.id) ? " (в.о.)" : ""}">👤</span>
               <span class="task-token token-due" title="${t.dueDate ? `Дедлайн ${fmtDate(t.dueDate)}` : "Без дедлайну"}">⏱ ${dueShort}</span>
-              <span class="task-token token-ctrl" title="${ctrl.title}">🎯 ${ctrl.label}</span>
+              ${ctrl.label ? `<span class="task-token token-ctrl" title="${ctrl.title}">🎯 ${ctrl.label}</span>` : ``}
               <span class="task-token ${typeMeta.cls}" title="Тип задачі">${typeMeta.label}</span>
               ${overdueIcon}
               </div>
             </div>
-            ${blockerNote ? `<div class="hint">⛔ ${blockerNote}</div>` : ``}
           </div>
-          <div class="pill">›</div>
         </div>
       </div>
     `;
@@ -1719,9 +1822,12 @@ function viewTasks(){
         </div>
       </div>
       <div class="card-b">
-        ${chips}
+        <div class="task-toolbar">
+          ${chips}
+          ${searchUi}
+        </div>
         ${deptChips}
-        ${searchUi}
+        ${searchHint}
         <div class="list">${list}</div>
       </div>
     </div>
@@ -1793,6 +1899,9 @@ function quickActionsForTask(u, t){
     }
   }
 
+  if(canEditTask(u, t)){
+    btns.push(`<button class="btn ghost" data-action="openEditTask" data-arg1="${t.id}">✏️ Редагувати</button>`);
+  }
   return `<div class="actions">${btns.join("")}</div>`;
 }
 
@@ -1820,6 +1929,85 @@ function openStatusReasonModal(taskId, status){
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
     </div>
   `);
+}
+
+function appendReportText(id, text){
+  if(!text) return;
+  const el = document.getElementById(id);
+  if(!el) return;
+  const cur = el.value.trim();
+  el.value = cur ? `${cur}\n${text}` : text;
+}
+function fillReportIfEmpty(id, text){
+  if(!text) return;
+  const el = document.getElementById(id);
+  if(!el) return;
+  if(!el.value.trim()) el.value = text;
+}
+function buildReportTemplate(){
+  return {
+    done: "• [задача/подія] — результат",
+    progress: "• [задача] — поточний стан / що залишилось",
+    blocked: "• [задача] — причина / кого чекаємо",
+  };
+}
+function applyReportTemplate(){
+  const t = buildReportTemplate();
+  fillReportIfEmpty("rDone", t.done);
+  fillReportIfEmpty("rProg", t.progress);
+  fillReportIfEmpty("rBlock", t.blocked);
+  showToast("Шаблон вставлено в порожні поля.", "info");
+}
+function buildAutoReport(){
+  const u = currentSessionUser();
+  if(!u) return {done:"", progress:"", blocked:"", empty:true};
+  const today = kyivDateStr();
+  const updates = STATE.taskUpdates
+    .filter(x=>x.authorUserId===u.id && toDateOnly(x.at)===today)
+    .sort((a,b)=>b.at.localeCompare(a.at));
+
+  if(!updates.length) return {done:"", progress:"", blocked:"", empty:true};
+
+  const latestByTask = {};
+  updates.forEach(upd=>{
+    if(!latestByTask[upd.taskId]) latestByTask[upd.taskId] = upd;
+  });
+
+  const done = [];
+  const progress = [];
+  const blocked = [];
+
+  Object.values(latestByTask).forEach(upd=>{
+    const task = STATE.tasks.find(t=>t.id===upd.taskId);
+    const label = task ? `${task.id} — ${task.title}` : `Задача ${upd.taskId}`;
+    const note = upd.note ? `: ${upd.note}` : "";
+    const line = `• ${label}${note}`;
+    if(upd.status==="закрито"){
+      done.push(line);
+    } else if(upd.status==="блокер" || upd.status==="очікування"){
+      blocked.push(line);
+    } else {
+      progress.push(line);
+    }
+  });
+
+  return {
+    done: done.join("\n"),
+    progress: progress.join("\n"),
+    blocked: blocked.join("\n"),
+    empty: false
+  };
+}
+function autoFillReport(){
+  const data = buildAutoReport();
+  if(data.empty){
+    showToast("Сьогодні немає оновлень задач для автозаповнення.", "info");
+    return;
+  }
+  appendReportText("rDone", data.done);
+  appendReportText("rProg", data.progress);
+  appendReportText("rBlock", data.blocked);
+  showToast("Звіт автозаповнено з оновлень задач.", "ok");
 }
 
 function submitStatusReason(taskId, status){
@@ -2009,7 +2197,7 @@ function openTask(taskId){
         <span class="task-token token-dept" title="Відділ">${htmlesc(dept ? deptShortLabel(dept) : "Особ.")}</span>
         <span class="task-token token-user" title="Відповідальний">👤</span>
         <span class="task-token token-due" title="${t.dueDate ? `Дедлайн ${fmtDate(t.dueDate)}` : "Без дедлайну"}">⏱ ${t.dueDate ? fmtDateShort(t.dueDate) : "—"}</span>
-        <span class="task-token token-ctrl" title="${ctrl.title}">🎯 ${ctrl.label}</span>
+        ${ctrl.label ? `<span class="task-token token-ctrl" title="${ctrl.title}">🎯 ${ctrl.label}</span>` : ``}
         <span class="task-token">${htmlesc(t.priority)}</span>
       </div>
       <div class="hint">${ctrlHint}</div>
@@ -2028,6 +2216,174 @@ function openTask(taskId){
     <div class="sep"></div>
     ${quickActionsForTask(u, t) || `<button class="btn primary" data-action="hideSheet">Закрити</button>`}
   `);
+}
+
+function openEditTask(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+
+  if(!canEditTask(u, t)){
+    showSheet("Немає прав", `<div class="hint">Ви не маєте прав редагувати цю задачу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const isBoss = (u.role==="boss");
+  const isPersonal = (t.type==="personal");
+  const today = kyivDateStr();
+
+  const deptOptions = isPersonal
+    ? []
+    : (isBoss ? STATE.departments : STATE.departments.filter(d=>d.id===u.departmentId));
+
+  createTaskUserOptions = (deptId)=>{
+    if(isPersonal) return [STATE.users.find(x=>x.id==="u_boss")].filter(Boolean);
+    return getDeptResponsibleOptions(deptId);
+  };
+
+  const deptId = t.departmentId || (deptOptions[0]?.id ?? "");
+  const noDue = !t.dueDate;
+
+  showSheet("Редагувати задачу", `
+    <div class="hint">
+      Редагування задачі: <b>${htmlesc(t.id)}</b>
+    </div>
+
+    <div class="field">
+      <label>Назва</label>
+      <input id="tTitle" value="${htmlesc(t.title)}" />
+    </div>
+
+    <div class="field">
+      <label>Опис (опційно)</label>
+      <textarea id="tDesc">${htmlesc(t.description || "")}</textarea>
+    </div>
+
+    ${!isPersonal ? `
+      <div class="field">
+        <label>Відділ</label>
+        <select id="tDept" data-change="refreshRespOptions" ${isBoss ? "" : "disabled"}>
+          ${deptOptions.map(d=>`<option value="${d.id}" ${d.id===deptId ? "selected" : ""}>${htmlesc(d.name)}</option>`).join("")}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Відповідальний</label>
+        <select id="tResp"></select>
+      </div>
+    ` : `
+      <div class="field">
+        <label>Відповідальний</label>
+        <input value="Керівник (ви)" disabled />
+      </div>
+    `}
+
+    <div class="row2">
+      <div class="field">
+        <label>Пріоритет</label>
+        <select id="tPr">
+          <option value="звичайний" ${t.priority==="звичайний" ? "selected" : ""}>Звичайний</option>
+          <option value="високий" ${t.priority==="високий" ? "selected" : ""}>Високий</option>
+          <option value="терміново" ${t.priority==="терміново" ? "selected" : ""}>Терміново</option>
+          <option value="низький" ${t.priority==="низький" ? "selected" : ""}>Низький</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Дедлайн</label>
+        <input id="tDue" type="date" value="${t.dueDate ?? ""}" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label><input id="noDue" type="checkbox" data-change="toggleNoDue" ${noDue ? "checked" : ""} /> Без дедлайну</label>
+    </div>
+
+    <div id="ctrlBlock">
+      <div class="field">
+        <label>Контрольна дата</label>
+        <input id="tCtrl" type="date" value="${t.nextControlDate ?? ""}" />
+      </div>
+      <div class="field">
+        <label><input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" ${t.controlAlways ? "checked" : ""} /> Постійний контроль (без дати)</label>
+      </div>
+      <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
+    </div>
+
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="saveTaskEdits" data-arg1="${t.id}">Зберегти</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+
+  toggleNoDue();
+  if(!isPersonal) refreshRespOptions();
+  const respSel = document.getElementById("tResp");
+  if(respSel && t.responsibleUserId){
+    respSel.value = t.responsibleUserId;
+  }
+}
+
+function saveTaskEdits(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+
+  if(!canEditTask(u, t)){
+    showSheet("Немає прав", `<div class="hint">Ви не маєте прав редагувати цю задачу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const title = document.getElementById("tTitle").value.trim();
+  if(!title){
+    showSheet("Помилка", `<div class="hint">Вкажи назву задачі.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const desc = document.getElementById("tDesc").value.trim();
+  const pr = document.getElementById("tPr").value;
+  const noDue = document.getElementById("noDue").checked;
+  const due = noDue ? null : (document.getElementById("tDue").value || null);
+  const ctrlAlways = noDue ? !!document.getElementById("tCtrlAlways")?.checked : false;
+  const ctrl = (noDue && !ctrlAlways) ? (document.getElementById("tCtrl").value || null) : null;
+
+  if(!noDue && !due){
+    showSheet("Помилка", `<div class="hint">Вкажи дедлайн або вибери “Без дедлайну”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const isBoss = (u.role==="boss");
+  let departmentId = t.departmentId;
+  let responsibleUserId = t.responsibleUserId;
+
+  if(t.type!=="personal"){
+    const deptSel = document.getElementById("tDept");
+    if(isBoss && deptSel) departmentId = deptSel.value;
+    if(!departmentId) departmentId = t.departmentId;
+    const respSel = document.getElementById("tResp");
+    if(respSel) responsibleUserId = respSel.value;
+
+    const allowed = getDeptResponsibleOptions(departmentId).map(x=>x.id);
+    if(!allowed.includes(responsibleUserId)){
+      responsibleUserId = allowed[0] || responsibleUserId;
+    }
+  }
+
+  const patch = {
+    title,
+    description: desc,
+    priority: pr,
+    dueDate: due,
+    nextControlDate: ctrl,
+    controlAlways: ctrlAlways,
+    departmentId,
+    responsibleUserId,
+  };
+
+  updateTask(taskId, patch, u.id, "Редагування задачі");
+  hideSheet();
+  render();
+  showToast("Зміни збережено", "ok");
 }
 
 /* ===========================
@@ -2373,7 +2729,7 @@ function openDelegations(){
       <div class="item" style="cursor:default;">
         <div class="row">
           <div>
-            <div class="name">${htmlesc(dept?.name ?? "")}</div>
+            <div class="name">${deptBadgeHtml(dept)}</div>
             <div class="sub">
               <span class="badge ${stCls}">${stLbl}</span>
               <span class="pill">Нач.: ${htmlesc(prim?.name ?? "")}</span>
@@ -2427,6 +2783,65 @@ function cancelDelegationUi(id){
       <button class="btn danger" data-action="confirmCancelDelegation" data-arg1="${d.id}">Скасувати</button>
       <button class="btn ghost" data-action="hideSheet">Назад</button>
     </div>
+  `);
+}
+
+function openControlByDept(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Цей екран доступний тільки керівнику.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const tasks = getVisibleTasksForUser(u).filter(t=>!!t.departmentId);
+  const notBlocked = (t)=>!["блокер","очікування"].includes(t.status);
+  const tasksDate = tasks.filter(t=>t.nextControlDate && !t.controlAlways && notBlocked(t));
+  const tasksAlways = tasks.filter(t=>t.controlAlways && !t.nextControlDate && notBlocked(t));
+
+  const byDeptDate = STATE.departments.map(d=>{
+    const list = tasksDate.filter(t=>t.departmentId===d.id);
+    return {dept:d, list};
+  }).filter(x=>x.list.length>0);
+  const byDeptAlways = STATE.departments.map(d=>{
+    const list = tasksAlways.filter(t=>t.departmentId===d.id);
+    return {dept:d, list};
+  }).filter(x=>x.list.length>0);
+
+  const renderGroup = (title, icon, byDept, badgeCls)=> {
+    const total = byDept.reduce((s,x)=>s+x.list.length,0);
+    return `
+      <div class="control-block">
+        <div class="item" style="cursor:default;">
+          <div class="row">
+            <div class="name">${icon} ${title}</div>
+            <span class="badge ${badgeCls} mono">${total}</span>
+          </div>
+        </div>
+        ${byDept.length ? byDept.map(x=>{
+          const rows = x.list.map(t=>{
+            const suffix = t.nextControlDate ? ` — ${fmtDate(t.nextControlDate)}` : "";
+            return `• <b>${htmlesc(t.title)}</b>${htmlesc(suffix)}`;
+          }).join("<br/>");
+          return `<div class="item" style="cursor:default;">
+            <div class="row"><div class="name">${deptBadgeHtml(x.dept)}</div><span class="badge b-blue mono">${x.list.length}</span></div>
+            <div class="hint" style="margin-top:8px;">${rows}</div>
+          </div>`;
+        }).join("<div class=\"sep\"></div>") : `<div class="hint">Немає задач.</div>`}
+      </div>
+    `;
+  };
+
+  const html = `
+    <div class="control-grid">
+      ${renderGroup("Контроль з датою", "📅", byDeptDate, "b-blue")}
+      ${renderGroup("Постійний контроль", "♾️", byDeptAlways, "b-violet")}
+    </div>
+  `;
+
+  showSheet("Контроль по відділах", `
+    ${html}
+    <div class="sep"></div>
+    <button class="btn primary" data-action="hideSheet">Закрити</button>
   `);
 }
 function confirmCancelDelegation(id){
@@ -2652,6 +3067,64 @@ function viewAnalytics(){
   });
   const maxActive = Math.max(1, ...deptLoad.map(x=>x.active));
 
+  const activeDeptTasks = STATE.tasks.filter(t=>t.departmentId && t.status!=="закрито" && t.status!=="скасовано");
+  const recentClosed = STATE.tasks.filter(t=>t.departmentId && t.status==="закрито" && closeDateForTask(t) && closeDateForTask(t) >= days[0] && closeDateForTask(t) <= days[days.length-1]);
+  const priorityKeys = ["терміново","високий","звичайний","низький"];
+  const priorityLabels = {
+    "терміново":"Терміново",
+    "високий":"Високий",
+    "звичайний":"Звичайний",
+    "низький":"Низький"
+  };
+  const priorityCounts = priorityKeys.map(k=>({
+    key:k,
+    label: priorityLabels[k] || k,
+    count: activeDeptTasks.filter(t=>t.priority===k).length
+  }));
+  const priorityOther = activeDeptTasks.filter(t=>!priorityKeys.includes(t.priority)).length;
+  if(priorityOther>0){
+    priorityCounts.push({key:"other", label:"Без пріоритету", count: priorityOther});
+  }
+  const maxPriority = Math.max(1, ...priorityCounts.map(x=>x.count));
+  const priorityClosed = priorityKeys.map(k=>({
+    key:k,
+    label: priorityLabels[k] || k,
+    count: recentClosed.filter(t=>t.priority===k).length
+  }));
+  const priorityClosedOther = recentClosed.filter(t=>!priorityKeys.includes(t.priority)).length;
+  if(priorityClosedOther>0){
+    priorityClosed.push({key:"other", label:"Без пріоритету", count: priorityClosedOther});
+  }
+  const maxPriorityClosed = Math.max(1, ...priorityClosed.map(x=>x.count));
+
+  const priorityBreakdown = (list)=>{
+    const rows = priorityKeys.map(k=>({
+      key:k,
+      label: priorityLabels[k] || k,
+      count: list.filter(t=>t.priority===k).length
+    }));
+    const other = list.filter(t=>!priorityKeys.includes(t.priority)).length;
+    if(other>0){
+      rows.push({key:"other", label:"Без пріоритету", count: other});
+    }
+    const max = Math.max(1, ...rows.map(x=>x.count));
+    return {rows, max, total: list.length};
+  };
+
+  const activeDeadline = activeDeptTasks.filter(t=>!!t.dueDate);
+  const activeCtrlDate = activeDeptTasks.filter(t=>!t.dueDate && !!t.nextControlDate && !t.controlAlways);
+  const activeCtrlAlways = activeDeptTasks.filter(t=>!t.dueDate && !!t.controlAlways);
+  const closedDeadline = recentClosed.filter(t=>!!t.dueDate);
+  const closedCtrlDate = recentClosed.filter(t=>!t.dueDate && !!t.nextControlDate && !t.controlAlways);
+  const closedCtrlAlways = recentClosed.filter(t=>!t.dueDate && !!t.controlAlways);
+
+  const priActiveDeadline = priorityBreakdown(activeDeadline);
+  const priActiveCtrlDate = priorityBreakdown(activeCtrlDate);
+  const priActiveCtrlAlways = priorityBreakdown(activeCtrlAlways);
+  const priClosedDeadline = priorityBreakdown(closedDeadline);
+  const priClosedCtrlDate = priorityBreakdown(closedCtrlDate);
+  const priClosedCtrlAlways = priorityBreakdown(closedCtrlAlways);
+
   const body = `
     <div class="card">
       <div class="card-h">
@@ -2703,6 +3176,118 @@ function viewAnalytics(){
                 <div class="analytics-value mono">${x.active}</div>
               </div>
               <div class="hint" style="margin-top:2px;">⛔ ${x.blockers} • 🟠 ${x.overdue}</div>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Пріоритети задач</div><span class="badge b-blue mono">${activeDeptTasks.length}</span></div>
+          <div class="hint">Активні задачі по пріоритетах.</div>
+          <div class="analytics-bars">
+            ${priorityCounts.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label">${htmlesc(x.label)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/maxPriority)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.count}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Активні з дедлайном — пріоритети</div><span class="badge b-blue mono">${priActiveDeadline.total}</span></div>
+          <div class="hint">Активні задачі з дедлайном.</div>
+          <div class="analytics-bars">
+            ${priActiveDeadline.rows.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label">${htmlesc(x.label)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/priActiveDeadline.max)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.count}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Активні з датою контролю — пріоритети</div><span class="badge b-blue mono">${priActiveCtrlDate.total}</span></div>
+          <div class="hint">Активні задачі з контрольними датами.</div>
+          <div class="analytics-bars">
+            ${priActiveCtrlDate.rows.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label">${htmlesc(x.label)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/priActiveCtrlDate.max)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.count}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Активні на постійному контролі — пріоритети</div><span class="badge b-blue mono">${priActiveCtrlAlways.total}</span></div>
+          <div class="hint">Активні задачі на постійному контролі.</div>
+          <div class="analytics-bars">
+            ${priActiveCtrlAlways.rows.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label">${htmlesc(x.label)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/priActiveCtrlAlways.max)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.count}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Пріоритети закритих (7 днів)</div><span class="badge b-ok mono">${recentClosed.length}</span></div>
+          <div class="hint">Закриті задачі за останні 7 днів.</div>
+          <div class="analytics-bars">
+            ${priorityClosed.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label">${htmlesc(x.label)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/maxPriorityClosed)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.count}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Закриті з дедлайном — пріоритети (7 днів)</div><span class="badge b-ok mono">${priClosedDeadline.total}</span></div>
+          <div class="hint">Закриті задачі з дедлайном за останні 7 днів.</div>
+          <div class="analytics-bars">
+            ${priClosedDeadline.rows.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label">${htmlesc(x.label)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/priClosedDeadline.max)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.count}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Закриті з датою контролю — пріоритети (7 днів)</div><span class="badge b-ok mono">${priClosedCtrlDate.total}</span></div>
+          <div class="hint">Закриті задачі з контрольними датами за останні 7 днів.</div>
+          <div class="analytics-bars">
+            ${priClosedCtrlDate.rows.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label">${htmlesc(x.label)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/priClosedCtrlDate.max)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.count}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="item analytics-block" style="cursor:default;">
+          <div class="row"><div class="name">Закриті на постійному контролі — пріоритети (7 днів)</div><span class="badge b-ok mono">${priClosedCtrlAlways.total}</span></div>
+          <div class="hint">Закриті задачі на постійному контролі за останні 7 днів.</div>
+          <div class="analytics-bars">
+            ${priClosedCtrlAlways.rows.map(x=>`
+              <div class="analytics-bar-row">
+                <div class="analytics-label">${htmlesc(x.label)}</div>
+                <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/priClosedCtrlAlways.max)*100)}%"></div></div>
+                <div class="analytics-value mono">${x.count}</div>
+              </div>
             `).join("")}
           </div>
         </div>
@@ -2816,15 +3401,20 @@ const ACTIONS = {
   openDeptPeopleBoss,
   openDeptSummary,
   openDeptSummaryForm,
+  openControlByDept,
   openMissing,
   openReport,
   openReportForm,
   openTasksExportDialog,
   openTask,
+  openEditTask,
   openTaskList,
   toggleTaskScope,
   clearTaskSearch,
   setControlDate,
+  applyReportTemplate,
+  autoFillReport,
+  saveTaskEdits,
   setTaskDeptFilter,
   setReportFilter,
   setTab,
