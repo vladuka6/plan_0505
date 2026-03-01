@@ -2281,7 +2281,7 @@ function viewTasks(){
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
-      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isLate ? "is-overdue" : ""}">
+      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isLate ? "is-overdue" : ""}" data-type="${t.type}">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">

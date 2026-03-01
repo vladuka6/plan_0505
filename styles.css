@@ -506,17 +506,49 @@
       .control-grid{grid-template-columns:1fr;}
       .control-dept-body{grid-template-columns:1fr;}
       .control-dept-counts{display:none;}
-      .task-line{flex-wrap:nowrap;overflow:hidden;}
-      .task-meta{flex-wrap:nowrap;gap:4px;overflow:hidden;}
-      .task-title{flex-direction:row;align-items:center;}
-      .task-title .name{font-size:12px;line-height:1.1;}
+      .task-item{
+        padding:10px 12px 10px 16px;
+        border:1px solid rgba(150,170,205,.45);
+        background: rgba(255,255,255,.92);
+        box-shadow: 0 8px 18px rgba(25,35,60,.08);
+      }
+      .task-item::after{
+        content:"";
+        position:absolute;
+        left:0; top:0; bottom:0;
+        width:4px;
+        border-radius: var(--radius2) 0 0 var(--radius2);
+        background:#2d5fbd;
+      }
+      .task-item[data-type="internal"]::after{background:#4b5f82;}
+      .task-item[data-type="personal"]::after{background:#7151a8;}
+      .task-item.has-due::after{background:#2f9a5d;}
+      .task-item.ctrl-date::after{background:#6ea8fe;}
+      .task-item.ctrl-always::after{background:#8b6fe0;}
+      .task-item.is-overdue::after{background:#ff5c7a;}
+      .task-line{
+        flex-direction:column;
+        align-items:flex-start;
+        gap:6px;
+        overflow:visible;
+      }
+      .task-meta{
+        width:100%;
+        flex-wrap:nowrap;
+        gap:6px;
+        overflow:hidden;
+      }
+      .task-title{flex-direction:row;align-items:center;width:100%;}
+      .task-title .name{font-size:14px;line-height:1.2;}
       .task-num{font-size:11px;}
-      .task-token{font-size:10px;padding:2px 6px;}
+      .task-token{font-size:11px;padding:2px 7px;}
       .task-note{display:none;}
       .qa-full{display:none;}
       .qa-short{display:inline;}
       .task-token.token-status{display:none;}
-      .task-token.token-priority{display:none;}
+      .task-token.token-priority{display:inline-flex;min-width:22px;justify-content:center;}
+      .task-token.token-priority .token-text{display:none;}
+      .task-token.token-priority .token-ico{display:inline;font-weight:900;}
       .task-item.ctrl-always .task-token.token-due .token-text{display:none;}
       .task-item.ctrl-always .task-token.token-due .token-ico{display:inline;}
       .task-item.has-due .task-token.token-due.due-hot .token-text{color:#c34762;}
