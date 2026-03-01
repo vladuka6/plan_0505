@@ -3,6 +3,10 @@
 =========================== */
 const LS_KEY = "planner_prototype_ua_v2_full";
 const THEME_KEY = "planner_theme_pref";
+const SYNC_URL = "/sync";
+const SYNC_POLL_MS = 30000;
+const SYNC_DEBOUNCE_MS = 2500;
+const DEVICE_ID_KEY = "planner_device_id";
 const memoryStorage = {};
 function safeGet(key){
   try{
@@ -24,6 +28,17 @@ function safeRemove(key){
   } catch{
     delete memoryStorage[key];
   }
+}
+let _deviceId = null;
+function getDeviceId(){
+  if(_deviceId) return _deviceId;
+  let id = safeGet(DEVICE_ID_KEY);
+  if(!id){
+    id = `dev_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+    safeSet(DEVICE_ID_KEY, id);
+  }
+  _deviceId = id;
+  return id;
 }
 
 function kyivNow(){
@@ -82,6 +97,7 @@ function migrateState(st){
     taskUpdates: Array.isArray(st.taskUpdates) ? st.taskUpdates : [],
     dailyReports: Array.isArray(st.dailyReports) ? st.dailyReports : [],
     deptSummaries: Array.isArray(st.deptSummaries) ? st.deptSummaries : [],
+    sync: (st.sync && typeof st.sync === "object") ? st.sync : null,
   };
 
   if(next.version < 4){
@@ -100,7 +116,21 @@ function loadState(){
     return null;
   }
 }
-function saveState(st){
+function ensureSyncMeta(st){
+  if(!st.sync || typeof st.sync !== "object") st.sync = {};
+  if(!st.sync.deviceId) st.sync.deviceId = getDeviceId();
+  if(typeof st.sync.revision !== "number") st.sync.revision = 0;
+}
+function markStateChanged(st){
+  ensureSyncMeta(st);
+  st.sync.updatedAt = nowIsoKyiv();
+  st.sync.revision += 1;
+}
+function saveState(st, opts={}){
+  if(!opts.skipSyncStamp){
+    markStateChanged(st);
+    queueSync();
+  }
   safeSet(LS_KEY, JSON.stringify(st));
 }
 function nowIsoKyiv(){
@@ -4045,6 +4075,70 @@ function runMappedChange(name){
   if(typeof action === "function") action();
 }
 
+/* ===========================
+   AUTO SYNC
+=========================== */
+let _syncTimer = null;
+let _syncInFlight = false;
+let _lastPullAt = null;
+let _lastPushAt = null;
+
+function stateStamp(st){
+  return (st && st.sync && st.sync.updatedAt) ? st.sync.updatedAt : "";
+}
+function queueSync(){
+  if(!SYNC_URL) return;
+  if(_syncTimer) clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(pushSync, SYNC_DEBOUNCE_MS);
+}
+async function pushSync(){
+  if(!SYNC_URL || _syncInFlight) return;
+  _syncInFlight = true;
+  try{
+    ensureSyncMeta(STATE);
+    const payload = { state: STATE };
+    const res = await fetch(SYNC_URL, {
+      method: "PUT",
+      headers: {"Content-Type":"application/json"},
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+    if(res.ok){
+      _lastPushAt = nowIsoKyiv();
+    }
+  } catch{}
+  _syncInFlight = false;
+}
+async function pullSync(){
+  if(!SYNC_URL || _syncInFlight) return;
+  _syncInFlight = true;
+  try{
+    const res = await fetch(SYNC_URL, {credentials: "include"});
+    if(!res.ok){ _syncInFlight = false; return; }
+    const data = await res.json();
+    if(!data || !data.state){ _syncInFlight = false; return; }
+    const remote = migrateState(data.state) || data.state;
+    const localStamp = stateStamp(STATE);
+    const remoteStamp = stateStamp(remote);
+    if(remoteStamp && (!localStamp || remoteStamp > localStamp)){
+      STATE = remote;
+      saveState(STATE, {skipSyncStamp:true});
+      render();
+    }
+    _lastPullAt = nowIsoKyiv();
+  } catch{}
+  _syncInFlight = false;
+}
+function initAutoSync(){
+  if(!SYNC_URL) return;
+  pullSync();
+  setInterval(pullSync, SYNC_POLL_MS);
+  document.addEventListener("visibilitychange", ()=>{
+    if(!document.hidden) pullSync();
+  });
+  window.addEventListener("online", pullSync);
+}
+
 document.addEventListener("click", (e)=>{
   const el = e.target.closest("[data-action]");
   if(!el) return;
@@ -4087,5 +4181,6 @@ function render(){
 =========================== */
 applyTheme(UI.theme);
 render();
+initAutoSync();
 
 
