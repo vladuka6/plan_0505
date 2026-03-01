@@ -11,6 +11,7 @@ let _syncTimer = null;
 let _syncInFlight = false;
 let _lastPullAt = null;
 let _lastPushAt = null;
+let _overdueTimer = null;
 const memoryStorage = {};
 function safeGet(key){
   try{
@@ -2281,7 +2282,7 @@ function viewTasks(){
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
-      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isLate ? "is-overdue" : ""}" data-type="${t.type}">
+      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isLate ? "is-overdue" : ""}" data-type="${t.type}" data-task-id="${t.id}">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">
@@ -4138,6 +4139,26 @@ function initAutoSync(){
   window.addEventListener("online", pullSync);
 }
 
+function refreshOverdueClasses(){
+  const items = document.querySelectorAll(".task-item[data-task-id]");
+  if(!items.length) return;
+  items.forEach(el=>{
+    const id = el.dataset.taskId;
+    if(!id) return;
+    const t = STATE.tasks.find(x=>x.id===id);
+    if(!t) return;
+    el.classList.toggle("is-overdue", isOverdue(t));
+  });
+}
+function initOverdueTicker(){
+  refreshOverdueClasses();
+  if(_overdueTimer) clearInterval(_overdueTimer);
+  _overdueTimer = setInterval(refreshOverdueClasses, 30000);
+  document.addEventListener("visibilitychange", ()=>{
+    if(!document.hidden) refreshOverdueClasses();
+  });
+}
+
 document.addEventListener("click", (e)=>{
   const el = e.target.closest("[data-action]");
   if(!el) return;
@@ -4181,5 +4202,6 @@ function render(){
 applyTheme(UI.theme);
 render();
 initAutoSync();
+initOverdueTicker();
 
 
