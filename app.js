@@ -7,6 +7,10 @@ const SYNC_URL = "/sync";
 const SYNC_POLL_MS = 30000;
 const SYNC_DEBOUNCE_MS = 2500;
 const DEVICE_ID_KEY = "planner_device_id";
+let _syncTimer = null;
+let _syncInFlight = false;
+let _lastPullAt = null;
+let _lastPushAt = null;
 const memoryStorage = {};
 function safeGet(key){
   try{
@@ -4078,11 +4082,6 @@ function runMappedChange(name){
 /* ===========================
    AUTO SYNC
 =========================== */
-let _syncTimer = null;
-let _syncInFlight = false;
-let _lastPullAt = null;
-let _lastPushAt = null;
-
 function stateStamp(st){
   return (st && st.sync && st.sync.updatedAt) ? st.sync.updatedAt : "";
 }
