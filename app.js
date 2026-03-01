@@ -108,6 +108,36 @@ function migrateState(st){
   if(next.version < 4){
     next.version = 4;
   }
+  if(Array.isArray(next.departments) && next.departments.length){
+    const deptMap = {
+      "Відділ №1":"Відділ БАС",
+      "Відділ №2":"Відділ НРК",
+      "Відділ №3":"Відділ МБеС",
+      "Відділ №4":"Відділ БС",
+      "Відділ №5":"Відділ ІОЗ",
+      "Відділ №6":"Відділ КПЗБС",
+      "Відділ №7":"Відділ РТБС",
+      "Відділ 1":"Відділ БАС",
+      "Відділ 2":"Відділ НРК",
+      "Відділ 3":"Відділ МБеС",
+      "Відділ 4":"Відділ БС",
+      "Відділ 5":"Відділ ІОЗ",
+      "Відділ 6":"Відділ КПЗБС",
+      "Відділ 7":"Відділ РТБС",
+      "Відділ № 1":"Відділ БАС",
+      "Відділ № 2":"Відділ НРК",
+      "Відділ № 3":"Відділ МБеС",
+      "Відділ № 4":"Відділ БС",
+      "Відділ № 5":"Відділ ІОЗ",
+      "Відділ № 6":"Відділ КПЗБС",
+      "Відділ № 7":"Відділ РТБС",
+    };
+    next.departments = next.departments.map(d=>{
+      if(!d || !d.name) return d;
+      const mapped = deptMap[d.name];
+      return mapped ? {...d, name: mapped} : d;
+    });
+  }
 
   return next;
 }
@@ -164,13 +194,13 @@ function seed(){
     version: 4,
     session: { userId: null },
     departments: [
-      {id:"d1", name:"Відділ №1"},
-      {id:"d2", name:"Відділ №2"},
-      {id:"d3", name:"Відділ №3"},
-      {id:"d4", name:"Відділ №4"},
-      {id:"d5", name:"Відділ №5"},
-      {id:"d6", name:"Відділ №6"},
-      {id:"d7", name:"Відділ №7"},
+      {id:"d1", name:"Відділ БАС"},
+      {id:"d2", name:"Відділ НРК"},
+      {id:"d3", name:"Відділ МБеС"},
+      {id:"d4", name:"Відділ БС"},
+      {id:"d5", name:"Відділ ІОЗ"},
+      {id:"d6", name:"Відділ КПЗБС"},
+      {id:"d7", name:"Відділ РТБС"},
     ],
     users: [
       {id:"u_boss", login:"boss", pass:"1234", name:"Керівник", role:"boss", departmentId:null, active:true},
@@ -182,18 +212,8 @@ function seed(){
       {id:"u_e41", login:"e41", pass:"1234", name:"Виконавець 4-1", role:"executor", departmentId:"d4", active:true},
     ],
     delegations: [],
-    tasks: [
-      {id:"T-2026-0004", type:"managerial", title:"Підготувати пропозиції", description:"Зібрати та узагальнити матеріали.", departmentId:"d2", responsibleUserId:"u_h2", priority:"високий", status:"в_процесі", startDate: today, dueDate: addDays(today, 6), nextControlDate: null, createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
-      {id:"T-2026-0007", type:"managerial", title:"Оновити план-графік", description:"Актуалізувати план на тиждень.", departmentId:"d5", responsibleUserId:"u_h5", priority:"звичайний", status:"очікує_підтвердження", startDate: today, dueDate: addDays(today, 1), nextControlDate: null, createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
-      {id:"I-2026-0021", type:"internal", title:"Звірити залишки ЗІП", description:"Перевірити склад та оновити облік.", departmentId:"d2", responsibleUserId:"u_e21", priority:"звичайний", status:"блокер", startDate: today, dueDate: null, nextControlDate: addDays(today, 2), createdBy:"u_h2", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
-      {id:"P-2026-0001", type:"personal", title:"Подзвонити постачальнику цементу", description:"Уточнити строки/логістику. Тримати на контролі.", departmentId:null, responsibleUserId:"u_boss", priority:"звичайний", status:"в_процесі", startDate: today, dueDate: null, nextControlDate: addDays(today, 1), createdBy:"u_boss", createdAt: nowIsoKyiv(), updatedAt: nowIsoKyiv()},
-    ],
-    taskUpdates: [
-      {id:uid("upd"), taskId:"T-2026-0004", authorUserId:"u_h2", at: nowIsoKyiv(), note:"В процесі, збираємо вихідні дані.", status:"в_процесі"},
-      {id:uid("upd"), taskId:"T-2026-0007", authorUserId:"u_h5", at: nowIsoKyiv(), note:"Готово, прошу підтвердити.", status:"очікує_підтвердження"},
-      {id:uid("upd"), taskId:"I-2026-0021", authorUserId:"u_h2", at: nowIsoKyiv(), note:"Немає доступу до складу, очікуємо ключі.", status:"блокер"},
-      {id:uid("upd"), taskId:"P-2026-0001", authorUserId:"u_boss", at: nowIsoKyiv(), note:"Потрібно зробити дзвінок, тримати на контролі.", status:"в_процесі"},
-    ],
+    tasks: [],
+    taskUpdates: [],
     dailyReports: [],
     deptSummaries: []
   };
@@ -256,6 +276,9 @@ function dueSortKey(due){
 }
 function deptShortLabel(dept){
   if(!dept?.name) return "Особ.";
+  if(dept.name.startsWith("Відділ ")){
+    return dept.name.replace(/^Відділ\s+/,"").trim();
+  }
   const m = dept.name.match(/№\s*\d+/);
   return m ? m[0].replace(/\s+/g,"") : dept.name;
 }
