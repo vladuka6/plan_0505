@@ -2216,7 +2216,7 @@ function viewTasks(){
   });
 
   const chips = `
-    <div class="chips">
+    <div class="chips task-chips">
       <div class="chip ${filter==="активні"?"active":""}" data-action="setTaskFilter" data-arg1="активні"><span class="chip-ico">📌</span><span class="chip-text">Активні</span></div>
       <div class="chip ${filter==="очікує_підтвердження"?"active":""}" data-action="setTaskFilter" data-arg1="очікує_підтвердження"><span class="chip-ico">🟣</span><span class="chip-text">Очікує підтвердження</span></div>
       <div class="chip ${filter==="прострочені"?"active":""}" data-action="setTaskFilter" data-arg1="прострочені"><span class="chip-ico">🟠</span><span class="chip-text">Прострочені</span></div>
@@ -2226,7 +2226,7 @@ function viewTasks(){
     </div>
   `;
   const deptChips = (u.role==="boss") ? `
-    <div class="chips dept-chips">
+    <div class="chips dept-chips task-chips">
       ${STATE.departments.map(d=>{
         const c = getVisibleTasksForUser(u).filter(t=>t.departmentId===d.id && t.type!=="personal").length;
         const active = deptFilter===d.id ? "active" : "";
