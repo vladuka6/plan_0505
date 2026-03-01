@@ -183,13 +183,41 @@ function htmlesc(s){
 }
 function fmtDate(d){
   if(!d) return "—";
-  const [y,m,da] = d.split("-");
+  const [y,m,da] = d.split("T")[0].split("-");
   return `${da}.${m}.${y}`;
 }
 function fmtDateShort(d){
   if(!d) return "—";
   const parts = fmtDate(d).split(".");
   return `${parts[0]}.${parts[1]}`;
+}
+function splitDateTime(v){
+  if(!v) return {date:"", time:""};
+  const [date, time] = v.split("T");
+  return {date, time: time ? time.slice(0,5) : ""};
+}
+function joinDateTime(date, time){
+  if(!date) return null;
+  if(!time) return date;
+  return `${date}T${time}`;
+}
+function dueDisplay(due){
+  if(!due) return "—";
+  const {date, time} = splitDateTime(due);
+  if(!time) return fmtDateShort(date);
+  const today = kyivDateStr();
+  if(date === today) return time;
+  return `${time} ${fmtDateShort(date)}`;
+}
+function dueTitle(due){
+  if(!due) return "Без дедлайну";
+  const {date, time} = splitDateTime(due);
+  return time ? `${fmtDate(date)} ${time}` : fmtDate(date);
+}
+function dueSortKey(due){
+  if(!due) return "9999-99-99T99:99";
+  const {date, time} = splitDateTime(due);
+  return `${date}T${time || "00:00"}`;
 }
 function deptShortLabel(dept){
   if(!dept?.name) return "Особ.";
@@ -304,6 +332,18 @@ function statusLabel(s){
   };
   return map[s] || s;
 }
+function statusIcon(s){
+  const map = {
+    "на_контролі":"🧭",
+    "в_процесі":"🔄",
+    "очікування":"⏳",
+    "блокер":"⛔",
+    "очікує_підтвердження":"🟣",
+    "закрито":"✅",
+    "скасовано":"✖️",
+  };
+  return map[s] || "•";
+}
 function statusBadgeClass(s){
   if(s==="закрито") return "b-ok";
   if(s==="блокер" || s==="очікування") return "b-warn";
@@ -311,9 +351,18 @@ function statusBadgeClass(s){
   if(s==="в_процесі" || s==="на_контролі") return "b-blue";
   return "";
 }
+function priorityIcon(p){
+  const map = {
+    "терміново":"Т",
+    "високий":"В",
+    "звичайний":"З",
+    "низький":"Н",
+  };
+  return map[p] || "•";
+}
 function controlMeta(task){
   if(task.dueDate){
-    return {label:"", title:"Контроль недоступний при дедлайні", exportValue:""};
+    return {label:"", title:"", exportValue:""};
   }
   if(task.controlAlways){
     return {label:"постійно", title:"Контроль: постійно", exportValue:"постійно"};
@@ -325,7 +374,7 @@ function controlMeta(task){
       exportValue: task.nextControlDate
     };
   }
-  return {label:"—", title:"Без контролю", exportValue:""};
+  return {label:"", title:"", exportValue:""};
 }
 function controlSortKey(task){
   if(task.dueDate) return "9999-99-99";
@@ -333,10 +382,9 @@ function controlSortKey(task){
   return task.nextControlDate || "9999-99-99";
 }
 function controlHint(task){
-  if(task.dueDate) return "Є дедлайн — контроль не використовується.";
-  if(task.controlAlways) return "Контроль: постійно (без дати).";
+  if(task.controlAlways) return "Контроль: постійно.";
   if(task.nextControlDate) return `Контроль на ${fmtDate(task.nextControlDate)}.`;
-  return "Контроль не задано.";
+  return "";
 }
 function lastBlockerUpdate(task){
   return STATE.taskUpdates
@@ -344,8 +392,19 @@ function lastBlockerUpdate(task){
     .sort((a,b)=>b.at.localeCompare(a.at))[0] || null;
 }
 function isOverdue(task){
+  if(!task?.dueDate) return false;
+  if(task.status === "закрито" || task.status === "скасовано") return false;
   const today = kyivDateStr();
-  return !!task.dueDate && task.dueDate < today && task.status !== "закрито" && task.status !== "скасовано";
+  const {date, time} = splitDateTime(task.dueDate);
+  if(!date) return false;
+  if(date < today) return true;
+  if(date > today) return false;
+  if(!time) return false;
+  const now = kyivNow();
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  const [hh, mm] = time.split(":").map(Number);
+  const dueMin = (hh || 0)*60 + (mm || 0);
+  return nowMin >= dueMin;
 }
 function needsControl(task){
   const today = kyivDateStr();
@@ -470,6 +529,369 @@ function taskExportRows(tasks){
     ];
   });
 }
+function sortedTasksForExport(tasks){
+  return tasks.slice().sort((a,b)=>{
+    const bucket = (t)=>{
+      if(t.dueDate) return 0;
+      if(["блокер","очікування"].includes(t.status)) return 1;
+      if(t.nextControlDate) return 2;
+      if(t.controlAlways) return 3;
+      return 4;
+    };
+    const dateKey = (t)=>{
+      if(t.dueDate) return dueSortKey(t.dueDate);
+      if(t.nextControlDate) return t.nextControlDate;
+      if(t.controlAlways) return "0000-00-00";
+      return "9999-99-99";
+    };
+    const ba = bucket(a);
+    const bb = bucket(b);
+    if(ba!==bb) return ba - bb;
+    const dka = dateKey(a);
+    const dkb = dateKey(b);
+    if(dka!==dkb) return dka.localeCompare(dkb);
+    return (a.title || "").localeCompare(b.title || "");
+  });
+}
+function lastUpdateByTask(tasks){
+  const ids = new Set(tasks.map(t=>t.id));
+  const map = {};
+  STATE.taskUpdates.forEach(u=>{
+    if(!ids.has(u.taskId)) return;
+    if(!map[u.taskId] || (map[u.taskId].at || "") < (u.at || "")){
+      map[u.taskId] = u;
+    }
+  });
+  return map;
+}
+function taskExportRowsFull(tasks){
+  const sorted = sortedTasksForExport(tasks);
+  const lastMap = lastUpdateByTask(sorted);
+  return sorted.map((t, idx)=>{
+    const resp = getUserById(t.responsibleUserId)?.name || "";
+    const creator = getUserById(t.createdBy)?.name || t.createdBy || "";
+    const ctrl = controlMeta(t);
+    const last = lastMap[t.id];
+    const lastAuthor = last ? (getUserById(last.authorUserId)?.name || last.authorUserId || "") : "";
+    const lastText = last
+      ? `${toDateOnly(last.at) || ""} ${lastAuthor}: ${shorten(last.note || statusLabel(last.status) || "", 80)}`
+      : "";
+    const updates = STATE.taskUpdates
+      .filter(u=>u.taskId===t.id)
+      .sort((a,b)=>(a.at || "").localeCompare(b.at || ""))
+      .map(u=>{
+        const au = getUserById(u.authorUserId)?.name || u.authorUserId || "";
+        const note = u.note || statusLabel(u.status) || "";
+        const d = toDateOnly(u.at) || "";
+        return `${d} ${au}: ${note}`;
+      }).join(" | ");
+    const updatesShort = shorten(updates, 200);
+    return [
+      `${idx+1}.`,
+      t.id,
+      t.title,
+      taskTypeLabel(t.type),
+      statusLabel(t.status),
+      t.startDate || "",
+      t.dueDate || "",
+      ctrl.exportValue || "",
+      t.priority || "",
+      resp,
+      toDateOnly(t.updatedAt) || "",
+      updatesShort || lastText,
+      creator,
+    ];
+  });
+}
+function autoCols(data, min=8, max=40){
+  if(!data.length) return [];
+  return data[0].map((_, i)=>{
+    let w = min;
+    data.forEach(row=>{
+      const v = row[i];
+      const len = (v === null || v === undefined) ? 0 : String(v).length;
+      if(len > w) w = len;
+    });
+    return {wch: Math.min(max, Math.max(min, w + 2))};
+  });
+}
+function buildWorksheetXmlRaw(name, rows){
+  const rowsXml = rows.map(r=>`<Row>${r.map(v=>`<Cell><Data ss:Type="String">${xmlEsc(v)}</Data></Cell>`).join("")}</Row>`).join("");
+  return `<Worksheet ss:Name="${xmlEsc(normalizeSheetName(name))}"><Table>${rowsXml}</Table></Worksheet>`;
+}
+function buildAnalyticsRows(){
+  const today = kyivDateStr();
+  const days = Array.from({length:7}, (_,i)=>addDays(today, -(6-i)));
+  const closeDateForTask = (task)=>{
+    const updates = STATE.taskUpdates
+      .filter(u=>u.taskId===task.id && u.status==="закрито")
+      .sort((a,b)=>b.at.localeCompare(a.at));
+    if(updates[0]) return toDateOnly(updates[0].at);
+    if(task.status==="закрито") return toDateOnly(task.updatedAt);
+    return null;
+  };
+  const weekClosed = days.map(d=>{
+    const count = STATE.tasks.filter(t=>closeDateForTask(t)===d).length;
+    return {date:d, count};
+  });
+  const closedDurations = STATE.tasks
+    .map(t=>{
+      const closeDate = closeDateForTask(t);
+      const startDate = toDateOnly(t.createdAt) || t.startDate;
+      if(!closeDate || !startDate) return null;
+      const daysToClose = dateDiffDays(startDate, closeDate);
+      if(daysToClose < 0) return null;
+      return {task:t, daysToClose};
+    })
+    .filter(Boolean);
+  const avgClose = closedDurations.length
+    ? (closedDurations.reduce((s,x)=>s+x.daysToClose, 0) / closedDurations.length).toFixed(1)
+    : "—";
+  const topProblems = STATE.tasks
+    .map(t=>{
+      const blockerUpdates = STATE.taskUpdates.filter(u=>u.taskId===t.id && (u.status==="блокер" || u.status==="очікування"));
+      return {task:t, count:blockerUpdates.length, last:blockerUpdates.sort((a,b)=>b.at.localeCompare(a.at))[0]};
+    })
+    .filter(x=>x.count>0)
+    .sort((a,b)=>b.count-a.count)
+    .slice(0,5);
+  const deptLoad = STATE.departments.map(d=>{
+    const deptTasks = STATE.tasks.filter(t=>t.departmentId===d.id);
+    const active = deptTasks.filter(t=>t.status!=="закрито" && t.status!=="скасовано").length;
+    const blockers = deptTasks.filter(t=>t.status==="блокер" || t.status==="очікування").length;
+    const overdue = deptTasks.filter(t=>isOverdue(t)).length;
+    return {dept:d, active, blockers, overdue};
+  });
+  const activeDeptTasks = STATE.tasks.filter(t=>t.departmentId && t.status!=="закрито" && t.status!=="скасовано");
+  const recentClosed = STATE.tasks.filter(t=>t.departmentId && t.status==="закрито" && closeDateForTask(t) && closeDateForTask(t) >= days[0] && closeDateForTask(t) <= days[days.length-1]);
+  const priorityKeys = ["терміново","високий","звичайний","низький"];
+  const priorityLabels = {
+    "терміново":"Терміново",
+    "високий":"Високий",
+    "звичайний":"Звичайний",
+    "низький":"Низький"
+  };
+  const priorityCounts = priorityKeys.map(k=>({
+    key:k,
+    label: priorityLabels[k] || k,
+    count: activeDeptTasks.filter(t=>t.priority===k).length
+  }));
+  const priorityOther = activeDeptTasks.filter(t=>!priorityKeys.includes(t.priority)).length;
+  if(priorityOther>0){
+    priorityCounts.push({key:"other", label:"Без пріоритету", count: priorityOther});
+  }
+  const priorityClosed = priorityKeys.map(k=>({
+    key:k,
+    label: priorityLabels[k] || k,
+    count: recentClosed.filter(t=>t.priority===k).length
+  }));
+  const priorityClosedOther = recentClosed.filter(t=>!priorityKeys.includes(t.priority)).length;
+  if(priorityClosedOther>0){
+    priorityClosed.push({key:"other", label:"Без пріоритету", count: priorityClosedOther});
+  }
+  const priorityBreakdown = (list)=>{
+    const rows = priorityKeys.map(k=>({
+      key:k,
+      label: priorityLabels[k] || k,
+      count: list.filter(t=>t.priority===k).length
+    }));
+    const other = list.filter(t=>!priorityKeys.includes(t.priority)).length;
+    if(other>0){
+      rows.push({key:"other", label:"Без пріоритету", count: other});
+    }
+    return {rows, total: list.length};
+  };
+  const activeDeadline = activeDeptTasks.filter(t=>!!t.dueDate);
+  const activeCtrlDate = activeDeptTasks.filter(t=>!t.dueDate && !!t.nextControlDate && !t.controlAlways);
+  const activeCtrlAlways = activeDeptTasks.filter(t=>!t.dueDate && !!t.controlAlways);
+  const closedDeadline = recentClosed.filter(t=>!!t.dueDate);
+  const closedCtrlDate = recentClosed.filter(t=>!t.dueDate && !!t.nextControlDate && !t.controlAlways);
+  const closedCtrlAlways = recentClosed.filter(t=>!t.dueDate && !!t.controlAlways);
+  const priActiveDeadline = priorityBreakdown(activeDeadline);
+  const priActiveCtrlDate = priorityBreakdown(activeCtrlDate);
+  const priActiveCtrlAlways = priorityBreakdown(activeCtrlAlways);
+  const priClosedDeadline = priorityBreakdown(closedDeadline);
+  const priClosedCtrlDate = priorityBreakdown(closedCtrlDate);
+  const priClosedCtrlAlways = priorityBreakdown(closedCtrlAlways);
+
+  const rows = [];
+  rows.push([`АНАЛІТИКА (останні 7 днів)`]);
+  rows.push([]);
+  rows.push(["Графік закриття задач"]);
+  rows.push(["Дата","Кількість"]);
+  weekClosed.forEach(x=>rows.push([fmtDate(x.date), x.count]));
+  rows.push([]);
+  rows.push(["Середній час закриття (днів)", avgClose]);
+  rows.push([]);
+  rows.push(["Топ проблем"]);
+  rows.push(["Задача","Відділ","К-сть блокерів","Останнє"]);
+  topProblems.forEach(x=>{
+    const dept = x.task.departmentId ? getDeptById(x.task.departmentId)?.name : "Особисто";
+    const note = x.last?.note ? shorten(x.last.note, 80) : "";
+    rows.push([x.task.title, dept || "", x.count, note]);
+  });
+  rows.push([]);
+  rows.push(["Навантаження по відділах"]);
+  rows.push(["Відділ","Активні","Блокери","Прострочені"]);
+  deptLoad.forEach(x=>rows.push([x.dept.name, x.active, x.blockers, x.overdue]));
+  rows.push([]);
+  rows.push(["Пріоритети активних", activeDeptTasks.length]);
+  rows.push(["Пріоритет","К-сть"]);
+  priorityCounts.forEach(x=>rows.push([x.label, x.count]));
+  rows.push([]);
+  rows.push(["Активні з дедлайном — пріоритети", priActiveDeadline.total]);
+  rows.push(["Пріоритет","К-сть"]);
+  priActiveDeadline.rows.forEach(x=>rows.push([x.label, x.count]));
+  rows.push([]);
+  rows.push(["Активні з датою контролю — пріоритети", priActiveCtrlDate.total]);
+  rows.push(["Пріоритет","К-сть"]);
+  priActiveCtrlDate.rows.forEach(x=>rows.push([x.label, x.count]));
+  rows.push([]);
+  rows.push(["Активні на постійному контролі — пріоритети", priActiveCtrlAlways.total]);
+  rows.push(["Пріоритет","К-сть"]);
+  priActiveCtrlAlways.rows.forEach(x=>rows.push([x.label, x.count]));
+  rows.push([]);
+  rows.push(["Пріоритети закритих (7 днів)", recentClosed.length]);
+  rows.push(["Пріоритет","К-сть"]);
+  priorityClosed.forEach(x=>rows.push([x.label, x.count]));
+  rows.push([]);
+  rows.push(["Закриті з дедлайном — пріоритети (7 днів)", priClosedDeadline.total]);
+  rows.push(["Пріоритет","К-сть"]);
+  priClosedDeadline.rows.forEach(x=>rows.push([x.label, x.count]));
+  rows.push([]);
+  rows.push(["Закриті з датою контролю — пріоритети (7 днів)", priClosedCtrlDate.total]);
+  rows.push(["Пріоритет","К-сть"]);
+  priClosedCtrlDate.rows.forEach(x=>rows.push([x.label, x.count]));
+  rows.push([]);
+  rows.push(["Закриті на постійному контролі — пріоритети (7 днів)", priClosedCtrlAlways.total]);
+  rows.push(["Пріоритет","К-сть"]);
+  priClosedCtrlAlways.rows.forEach(x=>rows.push([x.label, x.count]));
+  return rows;
+}
+function buildAnalyticsTableRows(){
+  const today = kyivDateStr();
+  const days = Array.from({length:7}, (_,i)=>addDays(today, -(6-i)));
+  const closeDateForTask = (task)=>{
+    const updates = STATE.taskUpdates
+      .filter(u=>u.taskId===task.id && u.status==="закрито")
+      .sort((a,b)=>b.at.localeCompare(a.at));
+    if(updates[0]) return toDateOnly(updates[0].at);
+    if(task.status==="закрито") return toDateOnly(task.updatedAt);
+    return null;
+  };
+  const weekClosed = days.map(d=>{
+    const count = STATE.tasks.filter(t=>closeDateForTask(t)===d).length;
+    return {date:d, count};
+  });
+  const closedDurations = STATE.tasks
+    .map(t=>{
+      const closeDate = closeDateForTask(t);
+      const startDate = toDateOnly(t.createdAt) || t.startDate;
+      if(!closeDate || !startDate) return null;
+      const daysToClose = dateDiffDays(startDate, closeDate);
+      if(daysToClose < 0) return null;
+      return {task:t, daysToClose};
+    })
+    .filter(Boolean);
+  const avgClose = closedDurations.length
+    ? (closedDurations.reduce((s,x)=>s+x.daysToClose, 0) / closedDurations.length).toFixed(1)
+    : "—";
+
+  const topProblems = STATE.tasks
+    .map(t=>{
+      const blockerUpdates = STATE.taskUpdates.filter(u=>u.taskId===t.id && (u.status==="блокер" || u.status==="очікування"));
+      return {task:t, count:blockerUpdates.length};
+    })
+    .filter(x=>x.count>0)
+    .sort((a,b)=>b.count-a.count)
+    .slice(0,5);
+
+  const deptLoad = STATE.departments.map(d=>{
+    const deptTasks = STATE.tasks.filter(t=>t.departmentId===d.id);
+    const active = deptTasks.filter(t=>t.status!=="закрито" && t.status!=="скасовано").length;
+    const blockers = deptTasks.filter(t=>t.status==="блокер" || t.status==="очікування").length;
+    const overdue = deptTasks.filter(t=>isOverdue(t)).length;
+    return {dept:d, active, blockers, overdue};
+  });
+
+  const activeDeptTasks = STATE.tasks.filter(t=>t.departmentId && t.status!=="закрито" && t.status!=="скасовано");
+  const recentClosed = STATE.tasks.filter(t=>t.departmentId && t.status==="закрито" && closeDateForTask(t) && closeDateForTask(t) >= days[0] && closeDateForTask(t) <= days[days.length-1]);
+  const priorityKeys = ["терміново","високий","звичайний","низький"];
+  const priorityLabels = {
+    "терміново":"Терміново",
+    "високий":"Високий",
+    "звичайний":"Звичайний",
+    "низький":"Низький"
+  };
+  const priorityCounts = priorityKeys.map(k=>({
+    key:k,
+    label: priorityLabels[k] || k,
+    count: activeDeptTasks.filter(t=>t.priority===k).length
+  }));
+  const priorityOther = activeDeptTasks.filter(t=>!priorityKeys.includes(t.priority)).length;
+  if(priorityOther>0){
+    priorityCounts.push({key:"other", label:"Без пріоритету", count: priorityOther});
+  }
+  const priorityClosed = priorityKeys.map(k=>({
+    key:k,
+    label: priorityLabels[k] || k,
+    count: recentClosed.filter(t=>t.priority===k).length
+  }));
+  const priorityClosedOther = recentClosed.filter(t=>!priorityKeys.includes(t.priority)).length;
+  if(priorityClosedOther>0){
+    priorityClosed.push({key:"other", label:"Без пріоритету", count: priorityClosedOther});
+  }
+  const priorityBreakdown = (list)=>{
+    const rows = priorityKeys.map(k=>({
+      key:k,
+      label: priorityLabels[k] || k,
+      count: list.filter(t=>t.priority===k).length
+    }));
+    const other = list.filter(t=>!priorityKeys.includes(t.priority)).length;
+    if(other>0){
+      rows.push({key:"other", label:"Без пріоритету", count: other});
+    }
+    return rows;
+  };
+  const activeDeadline = activeDeptTasks.filter(t=>!!t.dueDate);
+  const activeCtrlDate = activeDeptTasks.filter(t=>!t.dueDate && !!t.nextControlDate && !t.controlAlways);
+  const activeCtrlAlways = activeDeptTasks.filter(t=>!t.dueDate && !!t.controlAlways);
+  const closedDeadline = recentClosed.filter(t=>!!t.dueDate);
+  const closedCtrlDate = recentClosed.filter(t=>!t.dueDate && !!t.nextControlDate && !t.controlAlways);
+  const closedCtrlAlways = recentClosed.filter(t=>!t.dueDate && !!t.controlAlways);
+
+  const rows = [["Група","Сегмент","Показник","Значення"]];
+  weekClosed.forEach(x=>rows.push(["Закриття","Дата", fmtDate(x.date), x.count]));
+  rows.push(["Середній час закриття","Усереднено","Днів", avgClose]);
+  topProblems.forEach(x=>rows.push(["Топ проблем","Задача", x.task.title, x.count]));
+  deptLoad.forEach(x=>{
+    rows.push(["Відділи", x.dept.name, "Активні", x.active]);
+    rows.push(["Відділи", x.dept.name, "Блокери", x.blockers]);
+    rows.push(["Відділи", x.dept.name, "Прострочені", x.overdue]);
+  });
+  priorityCounts.forEach(x=>rows.push(["Пріоритети (активні)","Всі", x.label, x.count]));
+  priorityClosed.forEach(x=>rows.push(["Пріоритети (закриті 7 днів)","Всі", x.label, x.count]));
+  priorityBreakdown(activeDeadline).forEach(x=>rows.push(["Активні з дедлайном","Пріоритет", x.label, x.count]));
+  priorityBreakdown(activeCtrlDate).forEach(x=>rows.push(["Активні з датою контролю","Пріоритет", x.label, x.count]));
+  priorityBreakdown(activeCtrlAlways).forEach(x=>rows.push(["Активні на постійному контролі","Пріоритет", x.label, x.count]));
+  priorityBreakdown(closedDeadline).forEach(x=>rows.push(["Закриті з дедлайном (7 днів)","Пріоритет", x.label, x.count]));
+  priorityBreakdown(closedCtrlDate).forEach(x=>rows.push(["Закриті з датою контролю (7 днів)","Пріоритет", x.label, x.count]));
+  priorityBreakdown(closedCtrlAlways).forEach(x=>rows.push(["Закриті на постійному контролі (7 днів)","Пріоритет", x.label, x.count]));
+  return rows;
+}
+function applyTimesFont(ws){
+  if(!ws || !ws["!ref"]) return;
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+  for(let R = range.s.r; R <= range.e.r; R++){
+    for(let C = range.s.c; C <= range.e.c; C++){
+      const cellRef = XLSX.utils.encode_cell({r:R,c:C});
+      const cell = ws[cellRef];
+      if(!cell) continue;
+      cell.s = cell.s || {};
+      cell.s.font = {name:"Times New Roman", sz:11, bold: R===0};
+    }
+  }
+}
 function buildWorksheetXml(name, header, rows){
   const headerXml = `<Row>${header.map(h=>`<Cell ss:StyleID="header"><Data ss:Type="String">${xmlEsc(h)}</Data></Cell>`).join("")}</Row>`;
   const rowsXml = rows.map(r=>`<Row>${r.map(v=>`<Cell><Data ss:Type="String">${xmlEsc(v)}</Data></Cell>`).join("")}</Row>`).join("");
@@ -487,13 +909,13 @@ function buildTasksWorkbookXml(sheets){
   <Style ss:ID="Default" ss:Name="Normal">
    <Alignment ss:Vertical="Bottom"/>
    <Borders/>
-   <Font ss:FontName="Calibri" ss:Size="11"/>
+   <Font ss:FontName="Times New Roman" ss:Size="11"/>
    <Interior/>
    <NumberFormat/>
    <Protection/>
   </Style>
   <Style ss:ID="header">
-   <Font ss:Bold="1"/>
+   <Font ss:Bold="1" ss:FontName="Times New Roman"/>
    <Interior ss:Color="#DCE6F1" ss:Pattern="Solid"/>
   </Style>
  </Styles>
@@ -519,7 +941,7 @@ function openTasksExportDialog(){
   }
   const today = kyivDateStr();
   showSheet("Експорт задач у Excel", `
-    <div class="hint">Буде сформовано книгу Excel: вкладка <b>Загальні</b> + окрема вкладка по кожному відділу.</div>
+    <div class="hint">Буде сформовано книгу Excel: окремі вкладки по відділах і <b>Особисті</b>, та вкладки <b>Аналітика (візуально)</b> + <b>Аналітика (таблично)</b>. Колонка <b>Оновлення</b> містить усю історію (обрізано).</div>
     <div class="row2">
       <div class="field">
         <label>Від дати</label>
@@ -545,33 +967,53 @@ function exportTasksExcelNow(){
   }
 
   const visible = getVisibleTasksForUser(currentSessionUser()).filter(t=>taskInPeriod(t, from, to));
-  const header = ["Код","Назва","Тип","Статус","Відділ","Відповідальний","Пріоритет","Старт","Дедлайн","Контроль","Оновлено","Створив"];
+  const header = ["№","Код","Назва","Тип","Статус","Старт","Дедлайн","Контроль","Пріоритет","Відповідальний","Оновлено","Оновлення","Створив"];
+  const groups = [
+    ...STATE.departments.map(d=>({name: d.name, id: d.id})),
+    {name: "Особисті", id: "personal"}
+  ];
   const canUseXlsx = typeof XLSX !== "undefined" && XLSX.utils && XLSX.writeFile;
   if(canUseXlsx){
     const wb = XLSX.utils.book_new();
-    const addSheet = (name, rows)=>{
-      const data = [header, ...rows];
+    const addSheet = (name, headerRow, rows)=>{
+      const data = [headerRow, ...rows];
       const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = autoCols(data);
+      applyTimesFont(ws);
+      XLSX.utils.book_append_sheet(wb, ws, normalizeSheetName(name));
+    };
+    const addSheetRaw = (name, data)=>{
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = autoCols(data);
+      applyTimesFont(ws);
       XLSX.utils.book_append_sheet(wb, ws, normalizeSheetName(name));
     };
 
-    addSheet("Загальні", taskExportRows(visible));
-    STATE.departments.forEach(d=>{
-      const deptTasks = visible.filter(t=>t.departmentId===d.id);
-      addSheet(d.name, taskExportRows(deptTasks));
+    groups.forEach(g=>{
+      const deptTasks = (g.id==="personal")
+        ? visible.filter(t=>!t.departmentId)
+        : visible.filter(t=>t.departmentId===g.id);
+      if(!deptTasks.length) return;
+      addSheet(g.name, header, taskExportRowsFull(deptTasks));
     });
+    addSheetRaw("Аналітика (візуально)", buildAnalyticsRows());
+    addSheetRaw("Аналітика (таблично)", buildAnalyticsTableRows());
 
-    XLSX.writeFile(wb, `tasks_${from}_${to}.xlsx`);
+    XLSX.writeFile(wb, `tasks_${from}_${to}.xlsx`, {cellStyles:true});
     hideSheet();
     return;
   }
 
   const sheets = [];
-  sheets.push(buildWorksheetXml("Загальні", header, taskExportRows(visible)));
-  STATE.departments.forEach(d=>{
-    const deptTasks = visible.filter(t=>t.departmentId===d.id);
-    sheets.push(buildWorksheetXml(d.name, header, taskExportRows(deptTasks)));
+  groups.forEach(g=>{
+    const deptTasks = (g.id==="personal")
+      ? visible.filter(t=>!t.departmentId)
+      : visible.filter(t=>t.departmentId===g.id);
+    if(!deptTasks.length) return;
+    sheets.push(buildWorksheetXml(g.name, header, taskExportRowsFull(deptTasks)));
   });
+  sheets.push(buildWorksheetXmlRaw("Аналітика (візуально)", buildAnalyticsRows()));
+  sheets.push(buildWorksheetXmlRaw("Аналітика (таблично)", buildAnalyticsTableRows()));
   const xml = buildTasksWorkbookXml(sheets);
   downloadExcelXml(`tasks_${from}_${to}.xml`, xml);
   hideSheet();
@@ -694,6 +1136,7 @@ let UI = {
   taskFilter: "активні",
   taskDeptFilter: "all",
   taskSearch: "",
+  taskIndexMap: {},
   reportFilter: "сьогодні",
   reportsControlDate: null, // NEW
   theme: loadTheme(),
@@ -914,6 +1357,7 @@ function viewControl(){
   const isDeptTask = (t)=>!!t.departmentId;
   const controlTasksDate = tasksVis.filter(t=>t.nextControlDate && !t.controlAlways && notBlocked(t) && isDeptTask(t));
   const controlTasksAlways = tasksVis.filter(t=>t.controlAlways && !t.nextControlDate && notBlocked(t) && isDeptTask(t));
+  const deadlineTasks = tasksVis.filter(t=>t.dueDate && isDeptTask(t) && t.status!=="закрито" && t.status!=="скасовано");
   const controlByDeptDate = (u.role==="boss")
     ? STATE.departments.map(d=>{
         const list = controlTasksDate.filter(t=>t.departmentId===d.id);
@@ -923,6 +1367,12 @@ function viewControl(){
   const controlByDeptAlways = (u.role==="boss")
     ? STATE.departments.map(d=>{
         const list = controlTasksAlways.filter(t=>t.departmentId===d.id);
+        return {dept:d, count:list.length};
+      }).filter(x=>x.count>0)
+    : [];
+  const controlByDeptDeadline = (u.role==="boss")
+    ? STATE.departments.map(d=>{
+        const list = deadlineTasks.filter(t=>t.departmentId===d.id);
         return {dept:d, count:list.length};
       }).filter(x=>x.count>0)
     : [];
@@ -952,15 +1402,16 @@ function viewControl(){
               <div class="k">🎯 На контролі по відділах</div>
               <div class="d control-lines">
                 ${
-                  (!controlByDeptDate.length && !controlByDeptAlways.length)
+                  (!controlByDeptDate.length && !controlByDeptAlways.length && !controlByDeptDeadline.length)
                     ? `<span>Немає задач на контролі</span>`
                     : ``
                 }
               </div>
             </div>
             <div class="r control-counts">
-              <span class="pill mono">📅 ${controlTasksDate.length}</span>
-              <span class="pill mono">♾️ ${controlTasksAlways.length}</span>
+              <span class="pill mono">⏱ ${deadlineTasks.length}</span>
+              <span class="pill mono">🗓 ${controlTasksDate.length}</span>
+              <span class="pill mono">🎯 ${controlTasksAlways.length}</span>
             </div>
           </div>
           ` : ``}
@@ -1038,7 +1489,10 @@ function viewControl(){
 
           ${u.role==="boss" ? `
             <button class="btn ghost" data-action="openCreateTask" data-arg1="personal">➕ Моя задача</button>
-            <button class="btn ghost" data-action="openCreateTask" data-arg1="managerial">➕ Управлінська задача</button>
+            <button class="btn ghost" data-action="openCreateTask" data-arg1="managerial">
+              <span class="qa-full">➕ Управлінська задача</span>
+              <span class="qa-short">➕ Управлінськ</span>
+            </button>
           ` : `
             <button class="btn ghost" data-action="openCreateTask" data-arg1="internal">➕ Внутрішня задача</button>
             <button class="btn violet" data-action="openDeptSummaryForm">🧾 Підсумок відділу</button>
@@ -1677,37 +2131,36 @@ function viewTasks(){
     return hay.includes(taskSearch);
   }).sort((a,b)=>{
     const isDeptScope = (u.role!=="boss") || (u.role==="boss" && deptFilter!=="all" && deptFilter!=="personal");
+    const bucket = (t)=>{
+      if(t.dueDate) return 0;
+      if(["блокер","очікування"].includes(t.status)) return 1;
+      if(t.nextControlDate) return 2;
+      if(t.controlAlways) return 3;
+      return 4;
+    };
+    const dateKey = (t)=>{
+      if(t.dueDate) return dueSortKey(t.dueDate);
+      if(t.nextControlDate) return t.nextControlDate;
+      if(t.controlAlways) return "0000-00-00";
+      return "9999-99-99";
+    };
     if(u.role==="boss" && deptFilter==="all"){
       const deptName = (t)=> t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
       const deptKey = (t)=> `${t.departmentId ? "0" : "1"}_${deptName(t)}`;
-      const dateKey = (t)=>{
-        if(t.dueDate) return t.dueDate;
-        if(t.controlAlways) return "0000-00-00";
-        return t.nextControlDate || "9999-99-99";
-      };
       const dk = deptKey(a).localeCompare(deptKey(b));
       if(dk!==0) return dk;
+      const ba = bucket(a);
+      const bb = bucket(b);
+      if(ba!==bb) return ba - bb;
       const dka = dateKey(a);
       const dkb = dateKey(b);
       if(dka!==dkb) return dka.localeCompare(dkb);
       return (a.title || "").localeCompare(b.title || "");
     }
     if(isDeptScope){
-      const bucket = (t)=>{
-        if(t.dueDate) return 0;
-        if(t.nextControlDate) return 1;
-        if(t.controlAlways) return 2;
-        return 3;
-      };
       const ba = bucket(a);
       const bb = bucket(b);
       if(ba!==bb) return ba - bb;
-      const dateKey = (t)=>{
-        if(t.dueDate) return t.dueDate;
-        if(t.nextControlDate) return t.nextControlDate;
-        if(t.controlAlways) return "0000-00-00";
-        return "9999-99-99";
-      };
       const dka = dateKey(a);
       const dkb = dateKey(b);
       if(dka!==dkb) return dka.localeCompare(dkb);
@@ -1723,8 +2176,8 @@ function viewTasks(){
     const anc = controlSortKey(a);
     const bnc = controlSortKey(b);
     if(anc!==bnc) return anc.localeCompare(bnc);
-    const ad = a.dueDate || "9999-99-99";
-    const bd = b.dueDate || "9999-99-99";
+    const ad = dueSortKey(a.dueDate);
+    const bd = dueSortKey(b.dueDate);
     return ad.localeCompare(bd);
   });
 
@@ -1757,10 +2210,21 @@ function viewTasks(){
     </div>
   `;
   const searchHint = `<div class="hint">Показано: <span class="mono">${filtered.length}</span> із <span class="mono">${tasks.length}</span></div>`;
+  const buildDeptIndexMap = (list)=>{
+    const map = {};
+    const counts = {};
+    list.forEach(t=>{
+      const key = t.departmentId || "personal";
+      counts[key] = (counts[key] || 0) + 1;
+      map[t.id] = counts[key];
+    });
+    return map;
+  };
+  UI.taskIndexMap = buildDeptIndexMap(filtered);
 
-  const list = filtered.length ? filtered.map((t, idx)=>{
-    const dept = t.departmentId ? getDeptById(t.departmentId) : null;
-    const resp = getUserById(t.responsibleUserId);
+  const isScopeAll = (u.role==="boss" && deptFilter==="all");
+  const deptLabel = (t)=> t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
+  const renderTaskItem = (t, idx)=>{
     const titleTypeClass = (t.type==="managerial")
       ? "task-title-type-managerial"
       : (t.type==="internal")
@@ -1769,20 +2233,21 @@ function viewTasks(){
 
     const numbering = `${idx + 1}.`;
 
-    const typeMeta = (t.type==="managerial")
-      ? {cls:"token-type-managerial", label:"У"}
-      : (t.type==="internal")
-        ? {cls:"token-type-internal", label:"В"}
-        : {cls:"token-type-personal", label:"О"};
-    const dueShort = t.dueDate ? fmtDateShort(t.dueDate) : "—";
+    const dueShort = t.dueDate ? dueDisplay(t.dueDate) : "—";
+    const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
+    const prLabel = t.priority || "—";
+    const prIcon = priorityIcon(t.priority);
+    const prHot = (t.priority==="високий" || t.priority==="терміново");
     const ctrl = controlMeta(t);
+    const dueHot = !!t.dueDate && prHot;
+    const hideStatus = t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate);
     const blocker = (t.status==="блокер" || t.status==="очікування") ? lastBlockerUpdate(t) : null;
     const blockerNote = blocker?.note ? htmlesc(blocker.note).slice(0,120) : "";
-    const overdueIcon = isOverdue(t) ? `<span class="task-token token-flag" title="Прострочено">🟠</span>` : "";
+    const isLate = isOverdue(t);
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
-      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass}">
+      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isLate ? "is-overdue" : ""}">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">
@@ -1791,19 +2256,80 @@ function viewTasks(){
                 ${blockerNote ? `<div class="task-note">⛔ ${blockerNote}</div>` : ``}
               </div>
               <div class="task-meta">
-              <span class="task-token token-dept" title="${htmlesc(dept ? dept.name : "Особисто")}">${htmlesc(deptShortLabel(dept))}</span>
-              <span class="task-token token-user" title="${htmlesc(resp?.name ?? "")}${isActingHead(resp?.id) ? " (в.о.)" : ""}">👤</span>
-              <span class="task-token token-due" title="${t.dueDate ? `Дедлайн ${fmtDate(t.dueDate)}` : "Без дедлайну"}">⏱ ${dueShort}</span>
-              ${ctrl.label ? `<span class="task-token token-ctrl" title="${ctrl.title}">🎯 ${ctrl.label}</span>` : ``}
-              <span class="task-token ${typeMeta.cls}" title="Тип задачі">${typeMeta.label}</span>
-              ${overdueIcon}
+                ${!hideStatus ? `<span class="task-token token-status ${statusChip.cls} compact-hide" title="Статус"><span class="token-ico">${statusChip.icon}</span><span class="token-text">${htmlesc(statusChip.label)}</span></span>` : ``}
+                ${
+                  t.dueDate
+                    ? `<span class="task-token token-due ${dueHot ? "due-hot" : ""}" title="Дедлайн ${dueTitle(t.dueDate)}"><span class="token-ico">⏱</span><span class="token-text">${dueShort}</span></span>`
+                    : (ctrl.label
+                      ? `<span class="task-token token-due" title="${ctrl.title}"><span class="token-ico">${ctrl.label==="постійно" ? "🎯" : "🗓"}</span><span class="token-text">${htmlesc(ctrl.label)}</span></span>`
+                      : ``)
+                }
+                <span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide" title="Пріоритет"><span class="token-ico">${prIcon}</span><span class="token-text">${htmlesc(prLabel)}</span></span>
               </div>
             </div>
           </div>
         </div>
       </div>
     `;
-  }).join("") : (() => {
+  };
+
+  const renderGroupedList = (items)=>{
+    let current = null;
+    let groupItems = [];
+    let counts = null;
+    let groupHtml = [];
+    let idx = 0;
+    const countBucket = (t)=>{
+      if(t.dueDate) return "due";
+      if(["блокер","очікування"].includes(t.status)) return "blocker";
+      if(t.nextControlDate) return "controlDate";
+      if(t.controlAlways) return "controlAlways";
+      return "other";
+    };
+    const countBadge = (icon, label, count, cls)=>`
+      <span class="dept-count ${cls} ${count ? "" : "zero"}" title="${label}">
+        ${icon} <span class="mono">${count}</span>
+      </span>
+    `;
+    const flush = ()=>{
+      if(current === null) return;
+      const countsHtml = `
+        <span class="dept-counts">
+          ${countBadge("⏱", "Дедлайн", counts.due, "count-due")}
+          ${countBadge("⛔", "Блокер", counts.blocker, "count-blocker")}
+          ${countBadge("🗓", "Контроль з датою", counts.controlDate, "count-ctrl")}
+          ${countBadge("🎯", "Контроль постійно", counts.controlAlways, "count-always")}
+        </span>
+      `;
+      groupHtml.push(`
+        <details class="dept-group dept-disclosure">
+          <summary class="dept-title">
+            <span class="dept-title-text">${htmlesc(current)}</span>
+            ${countsHtml}
+          </summary>
+          <div class="dept-list">${groupItems.join("")}</div>
+        </details>
+      `);
+    };
+    items.forEach(t=>{
+      const label = deptLabel(t);
+      if(label !== current){
+        flush();
+        current = label;
+        groupItems = [];
+        counts = {due:0, blocker:0, controlDate:0, controlAlways:0};
+        idx = 0;
+      }
+      const bucketKey = countBucket(t);
+      if(bucketKey in counts) counts[bucketKey] += 1;
+      groupItems.push(renderTaskItem(t, idx));
+      idx += 1;
+    });
+    flush();
+    return groupHtml.join("");
+  };
+
+  const list = filtered.length ? (isScopeAll ? renderGroupedList(filtered) : filtered.map(renderTaskItem).join("")) : (() => {
     if(filter==="блокери") return `<div class="hint">Немає блокерів. Якщо є перешкода — постав статус “Блокер”.</div>`;
     if(filter==="прострочені") return `<div class="hint">Немає прострочених задач.</div>`;
     if(filter==="очікує_підтвердження") return `<div class="hint">Немає задач на підтвердження.</div>`;
@@ -1876,15 +2402,10 @@ function quickActionsForTask(u, t){
   if(isBoss){
     if(t.type==="managerial" && t.status==="очікує_підтвердження"){
       btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Підтвердити</button>`);
-      btns.push(`<button class="btn warn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="в_процесі">🔁 Повернути</button>`);
     } else {
       btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Закрити</button>`);
     }
-    btns.push(`<button class="btn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="в_процесі">🔄 В процесі</button>`);
     btns.push(`<button class="btn warn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="блокер">⛔ Блокер</button>`);
-    if(!t.dueDate){
-      btns.push(`<button class="btn ghost" data-action="setControlDate" data-arg1="${t.id}">🗓 Контроль</button>`);
-    }
   } else {
     if(t.type==="internal"){
       btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Закрити</button>`);
@@ -1892,11 +2413,7 @@ function quickActionsForTask(u, t){
     if(t.type==="managerial"){
       btns.push(`<button class="btn violet" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="очікує_підтвердження">🟣 Запит закриття</button>`);
     }
-    btns.push(`<button class="btn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="в_процесі">🔄 В процесі</button>`);
     btns.push(`<button class="btn warn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="блокер">⛔ Блокер</button>`);
-    if(!t.dueDate){
-      btns.push(`<button class="btn ghost" data-action="setControlDate" data-arg1="${t.id}">🗓 Контроль</button>`);
-    }
   }
 
   if(canEditTask(u, t)){
@@ -1909,14 +2426,19 @@ function openStatusReasonModal(taskId, status){
   const t = STATE.tasks.find(x=>x.id===taskId);
   if(!t) return;
   const isBlocking = status === "блокер";
-  const title = isBlocking ? "Блокер: вкажи причину" : "Розблокування: причина";
-  const label = isBlocking ? "Причина блокера" : "Причина розблокування";
+  const isClosing = status === "закрито";
+  const title = isBlocking
+    ? "Блокер: вкажи причину"
+    : (isClosing ? "Закриття: результат" : "Розблокування: причина");
+  const label = isBlocking
+    ? "Причина блокера"
+    : (isClosing ? "Результат / причина закриття" : "Причина розблокування");
   const hint = isBlocking
     ? "Опиши, що заважає або кого/чого очікуємо."
-    : "Що змінилося і чому можна рухатись далі.";
+    : (isClosing ? "Коротко: що зроблено або який результат." : "Що змінилося і чому можна рухатись далі.");
   const placeholder = isBlocking
     ? "Наприклад: немає доступу / чекаємо підтвердження / бракує ресурсу."
-    : "Наприклад: отримали доступ / підтвердили рішення / ресурс з’явився.";
+    : (isClosing ? "Наприклад: виконано повністю / передано результат / підтверджено." : "Наприклад: отримали доступ / підтвердили рішення / ресурс з’явився.");
 
   showSheet(title, `
     <div class="hint">${hint}</div>
@@ -2071,15 +2593,8 @@ function setTaskStatus(taskId, status, bypassConfirm=false){
     showSheet("Обмеження", `<div class="hint">Управлінську задачу закриває тільки керівник. Використайте “Запит закриття”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
-  if(!bypassConfirm && u.role==="boss" && t.type==="managerial" && status==="закрито"){
-    showSheet("Підтвердити закриття", `
-      <div class="hint">Закрити управлінську задачу <b>${htmlesc(t.title)}</b>?</div>
-      <div class="actions" style="margin-top:14px;">
-        <button class="btn ok" data-action="confirmTaskClose" data-arg1="${t.id}">✅ Так, закрити</button>
-        <button class="btn ghost" data-action="hideSheet">Скасувати</button>
-      </div>
-    `);
-    return;
+  if(status==="закрито"){
+    return openStatusReasonModal(taskId, status);
   }
 
   const isBlocking = (status === "блокер");
@@ -2108,7 +2623,7 @@ function setControlDate(taskId){
     return;
   }
   if(t.dueDate){
-    showSheet("Контроль недоступний", `<div class="hint">Для задач з дедлайном контроль не використовується.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    showSheet("Контроль недоступний", `<div class="hint">Контроль недоступний.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
 
@@ -2179,28 +2694,67 @@ function openTask(taskId){
   const resp = getUserById(t.responsibleUserId);
   const upd = STATE.taskUpdates.filter(x=>x.taskId===t.id).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,8);
   const ctrl = controlMeta(t);
-  const ctrlHint = controlHint(t);
+  const prHot = (t.priority==="високий" || t.priority==="терміново");
+  const dueHot = !!t.dueDate && prHot;
+  const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
+  const hideStatus = t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate);
+  const titleTypeClass = (t.type==="managerial")
+    ? "task-title-type-managerial"
+    : (t.type==="internal")
+      ? "task-title-type-internal"
+      : "task-title-type-personal";
+  const titleClass = t.dueDate ? "task-title-due" : titleTypeClass;
+  let deptNum = UI.taskIndexMap?.[t.id];
+  if(!deptNum){
+    const key = t.departmentId || "personal";
+    const list = getVisibleTasksForUser(u).filter(x=>(x.departmentId || "personal")===key);
+    const bucket = (x)=>{
+      if(x.dueDate) return 0;
+      if(["блокер","очікування"].includes(x.status)) return 1;
+      if(x.nextControlDate) return 2;
+      if(x.controlAlways) return 3;
+      return 4;
+    };
+    const dateKey = (x)=>{
+      if(x.dueDate) return dueSortKey(x.dueDate);
+      if(x.nextControlDate) return x.nextControlDate;
+      if(x.controlAlways) return "0000-00-00";
+      return "9999-99-99";
+    };
+    list.sort((a,b)=>{
+      const ba = bucket(a);
+      const bb = bucket(b);
+      if(ba!==bb) return ba - bb;
+      const dka = dateKey(a);
+      const dkb = dateKey(b);
+      if(dka!==dkb) return dka.localeCompare(dkb);
+      return (a.title || "").localeCompare(b.title || "");
+    });
+    const idx = list.findIndex(x=>x.id===t.id);
+    deptNum = idx>=0 ? idx+1 : null;
+  }
 
   showSheet("Картка задачі", `
     <div class="item task-sheet-compact" style="cursor:default;">
-      <div class="name">${htmlesc(t.title)}</div>
-      <div class="sub">
-        ${
-          t.type==="managerial" ? `<span class="badge b-blue">Управлінська</span>` :
-          t.type==="internal" ? `<span class="badge">Внутрішня</span>` :
-          `<span class="badge b-violet">Моя задача</span>`
-        }
-        <span class="badge ${statusBadgeClass(t.status)}">${statusLabel(t.status)}</span>
-        ${isOverdue(t) ? `<span class="badge b-danger">🟠 Прострочено</span>` : ``}
+      <div class="task-line">
+        <div class="task-title">
+          <div class="name ${titleClass}">${deptNum ? `<span class="task-num mono">${deptNum}.</span>` : ""} ${htmlesc(t.title)}</div>
+        </div>
+        <div class="task-meta">
+          ${!hideStatus ? `<span class="task-token token-status ${statusChip.cls} compact-hide" title="Статус"><span class="token-ico">${statusChip.icon}</span><span class="token-text">${htmlesc(statusChip.label)}</span></span>` : ``}
+          ${
+            t.dueDate
+              ? `<span class="task-token token-due ${dueHot ? "due-hot" : ""}" title="Дедлайн ${dueTitle(t.dueDate)}"><span class="token-ico">⏱</span><span class="token-text">${t.dueDate ? dueDisplay(t.dueDate) : "—"}</span></span>`
+              : (ctrl.label
+                ? `<span class="task-token token-due" title="${ctrl.title}"><span class="token-ico">${ctrl.label==="постійно" ? "🎯" : "🗓"}</span><span class="token-text">${htmlesc(ctrl.label)}</span></span>`
+                : ``)
+          }
+          <span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide"><span class="token-ico">${priorityIcon(t.priority)}</span><span class="token-text">${htmlesc(t.priority)}</span></span>
+        </div>
       </div>
-      <div class="task-meta">
-        <span class="task-token token-dept" title="Відділ">${htmlesc(dept ? deptShortLabel(dept) : "Особ.")}</span>
-        <span class="task-token token-user" title="Відповідальний">👤</span>
-        <span class="task-token token-due" title="${t.dueDate ? `Дедлайн ${fmtDate(t.dueDate)}` : "Без дедлайну"}">⏱ ${t.dueDate ? fmtDateShort(t.dueDate) : "—"}</span>
-        ${ctrl.label ? `<span class="task-token token-ctrl" title="${ctrl.title}">🎯 ${ctrl.label}</span>` : ``}
-        <span class="task-token">${htmlesc(t.priority)}</span>
-      </div>
-      <div class="hint">${ctrlHint}</div>
+
+      <div class="hint"><b>Опис:</b> ${t.description ? htmlesc(t.description) : "—"}</div>
+
       <details class="task-disclosure" ${upd.length ? "" : "open"}>
         <summary>Оновлення (${upd.length})</summary>
         <div class="hint">
@@ -2211,7 +2765,6 @@ function openTask(taskId){
           }).join("<br/>") : "Немає оновлень."}
         </div>
       </details>
-      ${t.description ? `<div class="hint"><b>Опис:</b> ${htmlesc(t.description)}</div>` : ``}
     </div>
     <div class="sep"></div>
     ${quickActionsForTask(u, t) || `<button class="btn primary" data-action="hideSheet">Закрити</button>`}
@@ -2243,6 +2796,7 @@ function openEditTask(taskId){
 
   const deptId = t.departmentId || (deptOptions[0]?.id ?? "");
   const noDue = !t.dueDate;
+  const dueParts = splitDateTime(t.dueDate);
 
   showSheet("Редагувати задачу", `
     <div class="hint">
@@ -2291,7 +2845,10 @@ function openEditTask(taskId){
 
       <div class="field">
         <label>Дедлайн</label>
-        <input id="tDue" type="date" value="${t.dueDate ?? ""}" />
+        <div class="row" style="display:flex;gap:8px;">
+          <input id="tDue" type="date" value="${dueParts.date}" />
+          <input id="tDueTime" type="time" value="${dueParts.time}" />
+        </div>
       </div>
     </div>
 
@@ -2343,11 +2900,13 @@ function saveTaskEdits(taskId){
   const desc = document.getElementById("tDesc").value.trim();
   const pr = document.getElementById("tPr").value;
   const noDue = document.getElementById("noDue").checked;
-  const due = noDue ? null : (document.getElementById("tDue").value || null);
+  const dueDateVal = document.getElementById("tDue").value || null;
+  const dueTimeVal = document.getElementById("tDueTime")?.value || "";
+  const due = noDue ? null : joinDateTime(dueDateVal, dueTimeVal);
   const ctrlAlways = noDue ? !!document.getElementById("tCtrlAlways")?.checked : false;
   const ctrl = (noDue && !ctrlAlways) ? (document.getElementById("tCtrl").value || null) : null;
 
-  if(!noDue && !due){
+  if(!noDue && !dueDateVal){
     showSheet("Помилка", `<div class="hint">Вкажи дедлайн або вибери “Без дедлайну”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
@@ -2380,7 +2939,22 @@ function saveTaskEdits(taskId){
     responsibleUserId,
   };
 
-  updateTask(taskId, patch, u.id, "Редагування задачі");
+  const oldDept = t.departmentId ? (getDeptById(t.departmentId)?.name || "—") : "Особисто";
+  const newDept = departmentId ? (getDeptById(departmentId)?.name || "—") : "Особисто";
+  const oldResp = t.responsibleUserId ? (getUserById(t.responsibleUserId)?.name || "—") : "—";
+  const newResp = responsibleUserId ? (getUserById(responsibleUserId)?.name || "—") : "—";
+  const ctrlLabel = (d, always)=> always ? "постійно" : (d ? fmtDate(d) : "—");
+  const changes = [];
+  if(title !== t.title) changes.push(`Назва: "${shorten(t.title)}" → "${shorten(title)}"`);
+  if(desc !== (t.description || "")) changes.push(`Опис: "${shorten(t.description || "")}" → "${shorten(desc)}"`);
+  if(pr !== t.priority) changes.push(`Пріоритет: ${t.priority || "—"} → ${pr || "—"}`);
+  if(due !== t.dueDate) changes.push(`Дедлайн: ${t.dueDate ? dueTitle(t.dueDate) : "—"} → ${due ? dueTitle(due) : "—"}`);
+  if(ctrlLabel(t.nextControlDate, t.controlAlways) !== ctrlLabel(ctrl, ctrlAlways)) changes.push(`Контроль: ${ctrlLabel(t.nextControlDate, t.controlAlways)} → ${ctrlLabel(ctrl, ctrlAlways)}`);
+  if(departmentId !== t.departmentId) changes.push(`Відділ: ${oldDept} → ${newDept}`);
+  if(responsibleUserId !== t.responsibleUserId) changes.push(`Відповідальний: ${oldResp} → ${newResp}`);
+  const note = changes.length ? `Змінено: ${changes.join("; ")}` : "Редагування без змін";
+
+  updateTask(taskId, patch, u.id, note);
   hideSheet();
   render();
   showToast("Зміни збережено", "ok");
@@ -2394,6 +2968,7 @@ let createTaskUserOptions = null;
 function toggleNoDue(){
   const noDueEl = document.getElementById("noDue");
   const due = document.getElementById("tDue");
+  const dueTime = document.getElementById("tDueTime");
   const ctrl = document.getElementById("tCtrl");
   const ctrlAlways = document.getElementById("tCtrlAlways");
   const ctrlBlock = document.getElementById("ctrlBlock");
@@ -2401,8 +2976,10 @@ function toggleNoDue(){
 
   const no = noDueEl.checked;
   due.disabled = no;
+  if(dueTime) dueTime.disabled = no;
   if(no){
     due.value = "";
+    if(dueTime) dueTime.value = "";
     if(ctrl){
       if(!ctrl.value && !(ctrlAlways && ctrlAlways.checked)){
         ctrl.value = addDays(kyivDateStr(), 1);
@@ -2538,7 +3115,10 @@ function openCreateTask(kind){
 
       <div class="field">
         <label>Дедлайн</label>
-        <input id="tDue" type="date" value="${addDays(today, 3)}" />
+        <div class="row" style="display:flex;gap:8px;">
+          <input id="tDue" type="date" value="${addDays(today, 3)}" />
+          <input id="tDueTime" type="time" value="" />
+        </div>
       </div>
     </div>
 
@@ -2578,8 +3158,15 @@ function createTaskNow(kind){
   const pr = document.getElementById("tPr").value;
   const noDue = document.getElementById("noDue").checked;
   const ctrlAlways = noDue ? !!document.getElementById("tCtrlAlways")?.checked : false;
-  const due = noDue ? null : (document.getElementById("tDue").value || null);
+  const dueDateVal = document.getElementById("tDue").value || null;
+  const dueTimeVal = document.getElementById("tDueTime")?.value || "";
+  const due = noDue ? null : joinDateTime(dueDateVal, dueTimeVal);
   const ctrl = (noDue && !ctrlAlways) ? (document.getElementById("tCtrl").value || null) : null;
+
+  if(!noDue && !dueDateVal){
+    showSheet("Помилка", `<div class="hint">Вкажи дедлайн або вибери “Без дедлайну”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
 
   const today = kyivDateStr();
 
@@ -2797,44 +3384,55 @@ function openControlByDept(){
   const notBlocked = (t)=>!["блокер","очікування"].includes(t.status);
   const tasksDate = tasks.filter(t=>t.nextControlDate && !t.controlAlways && notBlocked(t));
   const tasksAlways = tasks.filter(t=>t.controlAlways && !t.nextControlDate && notBlocked(t));
+  const tasksDeadline = tasks.filter(t=>t.dueDate && t.status!=="закрито" && t.status!=="скасовано");
 
-  const byDeptDate = STATE.departments.map(d=>{
-    const list = tasksDate.filter(t=>t.departmentId===d.id);
-    return {dept:d, list};
-  }).filter(x=>x.list.length>0);
-  const byDeptAlways = STATE.departments.map(d=>{
-    const list = tasksAlways.filter(t=>t.departmentId===d.id);
-    return {dept:d, list};
-  }).filter(x=>x.list.length>0);
+  const byDept = STATE.departments.map(d=>{
+    const deadline = tasksDeadline
+      .filter(t=>t.departmentId===d.id)
+      .sort((a,b)=>dueSortKey(a.dueDate).localeCompare(dueSortKey(b.dueDate)));
+    const ctrlDate = tasksDate
+      .filter(t=>t.departmentId===d.id)
+      .sort((a,b)=>(a.nextControlDate || "9999-99-99").localeCompare(b.nextControlDate || "9999-99-99"));
+    const ctrlAlways = tasksAlways.filter(t=>t.departmentId===d.id);
+    const total = deadline.length + ctrlDate.length + ctrlAlways.length;
+    return {dept:d, deadline, ctrlDate, ctrlAlways, total};
+  }).filter(x=>x.total>0);
 
-  const renderGroup = (title, icon, byDept, badgeCls)=> {
-    const total = byDept.reduce((s,x)=>s+x.list.length,0);
-    return `
-      <div class="control-block">
-        <div class="item" style="cursor:default;">
-          <div class="row">
-            <div class="name">${icon} ${title}</div>
-            <span class="badge ${badgeCls} mono">${total}</span>
-          </div>
-        </div>
-        ${byDept.length ? byDept.map(x=>{
-          const rows = x.list.map(t=>{
-            const suffix = t.nextControlDate ? ` — ${fmtDate(t.nextControlDate)}` : "";
-            return `• <b>${htmlesc(t.title)}</b>${htmlesc(suffix)}`;
-          }).join("<br/>");
-          return `<div class="item" style="cursor:default;">
-            <div class="row"><div class="name">${deptBadgeHtml(x.dept)}</div><span class="badge b-blue mono">${x.list.length}</span></div>
-            <div class="hint" style="margin-top:8px;">${rows}</div>
-          </div>`;
-        }).join("<div class=\"sep\"></div>") : `<div class="hint">Немає задач.</div>`}
+  const renderRows = (list, suffixFn)=> list.map(t=>{
+    const suffix = suffixFn ? suffixFn(t) : "";
+    const rowCls = isOverdue(t) ? "control-task overdue-line" : "control-task";
+    return `<span class="${rowCls}">• <b>${htmlesc(t.title)}</b>${htmlesc(suffix)}</span>`;
+  }).join("<br/>");
+
+  const renderSection = (title, icon, list, suffixFn)=>`
+    <div class="control-dept-section">
+      <div class="control-dept-section-h">${icon} ${title} <span class="mono">${list.length}</span></div>
+      <div class="control-dept-section-b">
+        ${list.length ? renderRows(list, suffixFn) : `<span class="hint">Немає</span>`}
       </div>
-    `;
-  };
+    </div>
+  `;
 
   const html = `
-    <div class="control-grid">
-      ${renderGroup("Контроль з датою", "📅", byDeptDate, "b-blue")}
-      ${renderGroup("Постійний контроль", "♾️", byDeptAlways, "b-violet")}
+    <div class="control-dept-grid">
+      ${byDept.map(x=>`
+        <div class="control-dept-card">
+          <div class="control-dept-head">
+            <div class="control-dept-name">${deptBadgeHtml(x.dept)} <span class="mono">${x.total}</span></div>
+            <div class="control-dept-counts">
+              <span class="pill mono">⏱ ${x.deadline.length}</span>
+              <span class="pill mono">🗓 ${x.ctrlDate.length}</span>
+              <span class="pill mono">🎯 ${x.ctrlAlways.length}</span>
+            </div>
+          </div>
+          <div class="control-dept-body">
+            ${renderSection("Дедлайн", "⏱", x.deadline, (t)=> t.dueDate ? ` — ${dueTitle(t.dueDate)}` : "")}
+            ${renderSection("Контроль з датою", "🗓", x.ctrlDate, (t)=> t.nextControlDate ? ` — ${fmtDate(t.nextControlDate)}` : "")}
+            ${renderSection("Постійний контроль", "🎯", x.ctrlAlways)}
+          </div>
+        </div>
+      `).join("")}
+      ${byDept.length ? "" : `<div class="hint">Немає задач.</div>`}
     </div>
   `;
 
