@@ -172,6 +172,7 @@
     .search-inline{margin-top:0;}
     .search-inline label{display:none;}
     .search-inline input{width:220px;max-width:220px;}
+    body.personal-announcements .search-inline input{width:160px;max-width:160px;}
     body.scope-all .task-meta .token-dept{display:none;}
     body.scope-all .task-meta .token-user{display:none;}
     body.scope-all .task-item.has-due .task-meta .token-ctrl{display:none;}

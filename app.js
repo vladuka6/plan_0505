@@ -1358,6 +1358,7 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
   document.body.classList.toggle("compact-tasks", compactTasks);
   document.body.classList.toggle("scope-all", scopeAll);
   document.body.classList.toggle("scope-dept", scopeDept);
+  document.body.classList.toggle("personal-announcements", (UI.tab===ROUTES.TASKS && UI.taskPersonalFilter==="announcements"));
   if(showFab){
     document.getElementById("fab").addEventListener("click", fabAction);
   }
@@ -4682,4 +4683,3 @@ applyTheme(UI.theme);
 render();
 initAutoSync();
 initOverdueTicker();
-
