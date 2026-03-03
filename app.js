@@ -2436,7 +2436,6 @@ function viewTasks(){
     const titleHtml = highlightMatch(t.title || "");
     const isAnn = isAnnouncement(t);
     const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
-    const annBadge = isAnn ? `<span class="task-token token-announcement" title="Оголошення">${highlightMatch(annLabel)}</span>` : "";
     const searchMeta = taskSearch
       ? `<div class="task-search-meta">ID: <span class="mono">${highlightMatch(t.id)}</span> • ${highlightMatch(deptName)} • ${highlightMatch(respName)}${isAnn ? ` • ${highlightMatch(annLabel)}` : ""}</div>`
       : "";
@@ -2490,7 +2489,6 @@ function viewTasks(){
                     )
                 }
                 ${isAnn ? `` : `<span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide" title="Пріоритет"><span class="token-ico">${prIcon}</span><span class="token-text">${htmlesc(prLabel)}</span></span>`}
-                ${annBadge}
               </div>
             </div>
           </div>
@@ -2613,6 +2611,9 @@ function viewTasks(){
   const listParts = [];
   if(showAnnouncementsScope && effectivePersonalFilter!=="tasks"){
     listParts.push(announcementsBlock);
+  }
+  if(showAnnouncementsScope && effectivePersonalFilter==="all" && announcementsBlock){
+    listParts.push(`<div class="section-title">Задачі</div>`);
   }
   if(effectivePersonalFilter!=="announcements"){
     listParts.push(tasksList);
@@ -3127,7 +3128,6 @@ function openTask(taskId){
         </div>
       </div>
 
-      ${isAnn ? `<div class="hint"><b>Аудиторія:</b> ${htmlesc(annLabel)}</div>` : ``}
       ${isAnn ? `` : `<div class="hint"><b>${descLabel}:</b> ${t.description ? htmlesc(t.description) : "—"}</div>`}
       ${(!isAnn && isDone) ? `<div class="hint"><b>Результат:</b>${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
 

@@ -283,8 +283,9 @@
     .done-list{display:flex;flex-direction:column;gap:10px;margin-top:8px;}
     .announcement-block{display:flex;flex-direction:column;gap:12px;margin-bottom:12px;}
     .announcement-section{display:flex;flex-direction:column;gap:8px;}
-    .announcement-title{font-weight:900;font-size:12px;color:var(--muted);}
+    .announcement-title{font-weight:900;font-size:16px;color:var(--text);text-align:center;}
     .announcement-list{display:flex;flex-direction:column;gap:10px;}
+    .section-title{font-weight:900;font-size:16px;color:var(--text);text-align:center;margin:6px 0 2px;}
     .item{
       padding: 12px;border-radius: var(--radius2);
       background: rgba(255,255,255,.72);
