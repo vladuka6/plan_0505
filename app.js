@@ -276,6 +276,31 @@ function dueSortKey(due){
   const {date, time} = splitDateTime(due);
   return `${date}T${time || "00:00"}`;
 }
+function splitDateTimeLoose(v){
+  if(!v) return {date:"", time:""};
+  const str = String(v).trim();
+  if(str.includes("T")){
+    const [date, time] = str.split("T");
+    return {date, time: time ? time.slice(0,5) : ""};
+  }
+  if(str.includes(" ")){
+    const [date, time] = str.split(" ");
+    return {date, time: time ? time.slice(0,5) : ""};
+  }
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str)) return {date: str, time:""};
+  return {date:"", time:""};
+}
+function closeDisplay(dt){
+  const {date, time} = splitDateTimeLoose(dt);
+  if(!date) return "—";
+  const t = time ? time.replace(":",".") : "";
+  return t ? `${fmtDateShort(date)} ${t}` : fmtDateShort(date);
+}
+function closeTitle(dt){
+  const {date, time} = splitDateTimeLoose(dt);
+  if(!date) return "—";
+  return time ? `${fmtDate(date)} ${time}` : `${fmtDate(date)}`;
+}
 function deptShortLabel(dept){
   if(!dept?.name) return "Особ.";
   if(dept.name.startsWith("Відділ ")){
@@ -450,6 +475,15 @@ function lastBlockerUpdate(task){
   return STATE.taskUpdates
     .filter(u=>u.taskId===task.id && (u.status==="блокер" || u.status==="очікування"))
     .sort((a,b)=>b.at.localeCompare(a.at))[0] || null;
+}
+function getCloseUpdate(task){
+  if(!task) return null;
+  const upd = STATE.taskUpdates
+    .filter(u=>u.taskId===task.id && u.status==="закрито")
+    .sort((a,b)=>b.at.localeCompare(a.at))[0];
+  if(upd) return upd;
+  if(task.status==="закрито") return {at: task.updatedAt || "", note: ""};
+  return null;
 }
 function isOverdue(task){
   if(!task?.dueDate) return false;
@@ -2323,6 +2357,12 @@ function viewTasks(){
     const isDone = t.status==="закрито";
     const desc = (t.description || "").trim();
     const descHtml = desc ? `<div class="task-desc">Опис: ${htmlesc(desc)}</div>` : "";
+    const closeUpd = isDone ? getCloseUpdate(t) : null;
+    const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
+    const closeShort = isDone ? closeDisplay(closeAt) : "";
+    const closeHint = isDone ? closeTitle(closeAt) : "";
+    const closeNote = isDone ? (closeUpd?.note || "") : "";
+    const resultHtml = isDone ? `<div class="task-result">Результат: ${closeNote ? htmlesc(closeNote) : "—"}</div>` : "";
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
@@ -2333,16 +2373,20 @@ function viewTasks(){
               <div class="task-title">
                 <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${htmlesc(t.title)}</div>
                 ${descHtml}
+                ${resultHtml}
                 ${blockerNote ? `<div class="task-note">⛔ ${blockerNote}</div>` : ``}
               </div>
               <div class="task-meta">
                 ${!hideStatus ? `<span class="task-token token-status ${statusChip.cls} compact-hide" title="Статус"><span class="token-ico">${statusChip.icon}</span><span class="token-text">${htmlesc(statusChip.label)}</span></span>` : ``}
                 ${
-                  t.dueDate
-                    ? `<span class="task-token token-due ${dueHot ? "due-hot" : ""}" title="Дедлайн ${dueTitle(t.dueDate)}"><span class="token-ico">⏱</span><span class="token-text">${dueShort}</span></span>`
+                  isDone
+                    ? `<span class="task-token token-due token-closed" title="${htmlesc(closeHint)}"><span class="token-ico">✅</span><span class="token-text">${htmlesc(closeShort || "—")}</span></span>`
+                    : (t.dueDate
+                      ? `<span class="task-token token-due ${dueHot ? "due-hot" : ""}" title="Дедлайн ${dueTitle(t.dueDate)}"><span class="token-ico">⏱</span><span class="token-text">${dueShort}</span></span>`
                     : (ctrl.label
                       ? `<span class="task-token token-due" title="${ctrl.title}"><span class="token-ico">${ctrl.label==="постійно" ? "🎯" : "🗓"}</span><span class="token-text">${htmlesc(ctrl.label)}</span></span>`
                       : ``)
+                    )
                 }
                 <span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide" title="Пріоритет"><span class="token-ico">${prIcon}</span><span class="token-text">${htmlesc(prLabel)}</span></span>
               </div>
@@ -2504,6 +2548,12 @@ function viewTasks(){
         if(e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
+        fab.click();
+      });
+    });
+    document.querySelectorAll(".dept-chips .chip").forEach((el)=>{
+      el.addEventListener("click", (e)=>{
+        if(e.button !== 0) return;
         fab.click();
       });
     });
@@ -2817,6 +2867,12 @@ function openTask(taskId){
   const dueHot = !!t.dueDate && prHot;
   const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
   const hideStatus = t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate);
+  const isDone = t.status==="закрито";
+  const closeUpd = isDone ? getCloseUpdate(t) : null;
+  const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
+  const closeShort = isDone ? closeDisplay(closeAt) : "";
+  const closeHint = isDone ? closeTitle(closeAt) : "";
+  const closeNote = isDone ? (closeUpd?.note || "") : "";
   const titleTypeClass = (t.type==="managerial")
     ? "task-title-type-managerial"
     : (t.type==="internal")
@@ -2862,17 +2918,21 @@ function openTask(taskId){
         <div class="task-meta">
           ${!hideStatus ? `<span class="task-token token-status ${statusChip.cls} compact-hide" title="Статус"><span class="token-ico">${statusChip.icon}</span><span class="token-text">${htmlesc(statusChip.label)}</span></span>` : ``}
           ${
-            t.dueDate
-              ? `<span class="task-token token-due ${dueHot ? "due-hot" : ""}" title="Дедлайн ${dueTitle(t.dueDate)}"><span class="token-ico">⏱</span><span class="token-text">${t.dueDate ? dueDisplay(t.dueDate) : "—"}</span></span>`
+            isDone
+              ? `<span class="task-token token-due token-closed" title="${htmlesc(closeHint)}"><span class="token-ico">✅</span><span class="token-text">${htmlesc(closeShort || "—")}</span></span>`
+              : (t.dueDate
+                ? `<span class="task-token token-due ${dueHot ? "due-hot" : ""}" title="Дедлайн ${dueTitle(t.dueDate)}"><span class="token-ico">⏱</span><span class="token-text">${t.dueDate ? dueDisplay(t.dueDate) : "—"}</span></span>`
               : (ctrl.label
                 ? `<span class="task-token token-due" title="${ctrl.title}"><span class="token-ico">${ctrl.label==="постійно" ? "🎯" : "🗓"}</span><span class="token-text">${htmlesc(ctrl.label)}</span></span>`
                 : ``)
+              )
           }
           <span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide"><span class="token-ico">${priorityIcon(t.priority)}</span><span class="token-text">${htmlesc(t.priority)}</span></span>
         </div>
       </div>
 
       <div class="hint"><b>Опис:</b> ${t.description ? htmlesc(t.description) : "—"}</div>
+      ${isDone ? `<div class="hint"><b>Результат:</b> ${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
 
       <details class="task-disclosure" ${upd.length ? "" : "open"}>
         <summary>Оновлення (${upd.length})</summary>
