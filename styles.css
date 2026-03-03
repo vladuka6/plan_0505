@@ -501,7 +501,6 @@
       text-overflow:ellipsis;
       max-width:520px;
     }
-    .task-item.announcement-item .task-desc{display:block;}
     .task-search-meta{
       font-size:12px;
       color: var(--muted);

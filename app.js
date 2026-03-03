@@ -1627,7 +1627,6 @@ function viewControl(){
       </div>
       <div class="card-b">
         <div class="actions">
-          <button class="btn primary" data-action="openReportForm">📝 Подати звіт</button>
           <button class="btn ghost" data-action="openTaskList" data-arg1="активні">📌 Активні задачі</button>
 
           ${u.role==="boss" ? `
@@ -1638,11 +1637,10 @@ function viewControl(){
             </button>
           ` : `
             <button class="btn ghost" data-action="openCreateTask" data-arg1="internal">➕ Внутрішня задача</button>
-            <button class="btn violet" data-action="openDeptSummaryForm">🧾 Підсумок відділу</button>
           `}
         </div>
 
-        ${u.role!=="boss" ? `<div class="hint" style="margin-top:10px;">${summaryBadge}</div>` : `
+        ${u.role!=="boss" ? `` : `
           <div class="hint" style="margin-top:10px;">Порада: “Мої задачі” — дзвінки/нагадування/контроль без дедлайну. Став контрольну дату.</div>
         `}
       </div>
@@ -1652,13 +1650,11 @@ function viewControl(){
   const tabs = (u.role==="boss")
     ? [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
-      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
     ]
     : [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
-      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     ];
 
@@ -1756,7 +1752,6 @@ function openDeptPeople(){
     ${rows || `<div class="hint">Немає людей у відділі.</div>`}
     <div class="sep"></div>
     <div class="actions">
-      <button class="btn violet" data-action="openDeptSummaryForm">🧾 Підсумок відділу</button>
       <button class="btn ghost" data-action="hideSheet">Закрити</button>
     </div>
   `);
@@ -2118,13 +2113,11 @@ function viewReports(){
   const tabs = (u.role==="boss")
     ? [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
-      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
     ]
     : [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
-      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     ];
 
@@ -2460,16 +2453,16 @@ function viewTasks(){
     const isLate = isOverdue(t);
     const isDueTodayTask = isDueToday(t) && !isLate;
     const isDone = t.status==="закрито";
-    const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
+    const hideStatus = isAnn || isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
     const desc = (t.description || "").trim();
     const descLabel = isAnn ? "Текст" : "Опис";
-    const descHtml = desc ? `<div class="task-desc">${descLabel}: ${htmlesc(desc)}</div>` : "";
+    const descHtml = (!isAnn && desc) ? `<div class="task-desc">${descLabel}: ${htmlesc(desc)}</div>` : "";
     const closeUpd = isDone ? getCloseUpdate(t) : null;
     const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
     const closeShort = isDone ? closeDisplay(closeAt) : "";
     const closeHint = isDone ? closeTitle(closeAt) : "";
     const closeNote = isDone ? normalizeCloseNote(closeUpd?.note || "") : "";
-    const resultHtml = isDone ? `<div class="task-result">Результат:${closeNote ? htmlesc(closeNote) : "—"}</div>` : "";
+    const resultHtml = (!isAnn && isDone) ? `<div class="task-result">Результат:${closeNote ? htmlesc(closeNote) : "—"}</div>` : "";
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
@@ -2496,7 +2489,7 @@ function viewTasks(){
                       : ``)
                     )
                 }
-                <span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide" title="Пріоритет"><span class="token-ico">${prIcon}</span><span class="token-text">${htmlesc(prLabel)}</span></span>
+                ${isAnn ? `` : `<span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide" title="Пріоритет"><span class="token-ico">${prIcon}</span><span class="token-text">${htmlesc(prLabel)}</span></span>`}
                 ${annBadge}
               </div>
             </div>
@@ -2652,13 +2645,11 @@ function viewTasks(){
   const tabs = (u.role==="boss")
     ? [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
-      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
     ]
     : [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
-      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     ];
 
@@ -2796,10 +2787,6 @@ function openEditAnnouncement(taskId){
     <div class="field">
       <label>Заголовок</label>
       <input id="aTitle" value="${htmlesc(t.title)}" />
-    </div>
-    <div class="field">
-      <label>Текст</label>
-      <textarea id="aBody">${htmlesc(t.description || "")}</textarea>
     </div>
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="saveAnnouncementEdits" data-arg1="${t.id}">Зберегти</button>
@@ -3076,7 +3063,7 @@ function openTask(taskId){
   const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
   const descLabel = isAnn ? "Текст" : "Опис";
   const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
-  const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
+  const hideStatus = isAnn || isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
   const closeUpd = isDone ? getCloseUpdate(t) : null;
   const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
   const closeShort = isDone ? closeDisplay(closeAt) : "";
@@ -3136,13 +3123,13 @@ function openTask(taskId){
                 : ``)
               )
           }
-          <span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide"><span class="token-ico">${priorityIcon(t.priority)}</span><span class="token-text">${htmlesc(t.priority)}</span></span>
+          ${isAnn ? `` : `<span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide"><span class="token-ico">${priorityIcon(t.priority)}</span><span class="token-text">${htmlesc(t.priority)}</span></span>`}
         </div>
       </div>
 
       ${isAnn ? `<div class="hint"><b>Аудиторія:</b> ${htmlesc(annLabel)}</div>` : ``}
-      <div class="hint"><b>${descLabel}:</b> ${t.description ? htmlesc(t.description) : "—"}</div>
-      ${isDone ? `<div class="hint"><b>Результат:</b>${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
+      ${isAnn ? `` : `<div class="hint"><b>${descLabel}:</b> ${t.description ? htmlesc(t.description) : "—"}</div>`}
+      ${(!isAnn && isDone) ? `<div class="hint"><b>Результат:</b>${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
 
       <details class="task-disclosure" ${upd.length ? "" : "open"}>
         <summary>Оновлення (${upd.length})</summary>
@@ -3365,23 +3352,17 @@ function saveAnnouncementEdits(taskId){
 
   const audience = document.getElementById("aAudience")?.value || "staff";
   const title = (document.getElementById("aTitle")?.value || "").trim();
-  const body = (document.getElementById("aBody")?.value || "").trim();
   if(!title){
     showSheet("Помилка", `<div class="hint">Вкажи заголовок оголошення.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
-    return;
-  }
-  if(body.length < 3){
-    showSheet("Помилка", `<div class="hint">Текст оголошення має бути мінімум 3 символи.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
 
   const changes = [];
   if(title !== t.title) changes.push(`Назва: "${shorten(t.title)}" → "${shorten(title)}"`);
-  if(body !== (t.description || "")) changes.push(`Текст: "${shorten(t.description || "")}" → "${shorten(body)}"`);
   if(audience !== (t.audience || "staff")) changes.push(`Аудиторія: ${announcementAudienceLabel(t.audience)} → ${announcementAudienceLabel(audience)}`);
   const note = changes.length ? `Оголошення: ${changes.join("; ")}` : "Оголошення без змін";
 
-  updateTask(taskId, {title, description: body, audience}, u.id, note);
+  updateTask(taskId, {title, audience, priority: null}, u.id, note);
   hideSheet();
   render();
   showToast("Оголошення оновлено", "ok");
@@ -3656,10 +3637,6 @@ function openCreateAnnouncement(){
       <label>Заголовок</label>
       <input id="aTitle" />
     </div>
-    <div class="field">
-      <label>Текст</label>
-      <textarea id="aBody"></textarea>
-    </div>
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="createAnnouncementNow">Зберегти</button>
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
@@ -3675,13 +3652,8 @@ function createAnnouncementNow(){
   }
   const audience = document.getElementById("aAudience")?.value || "staff";
   const title = (document.getElementById("aTitle")?.value || "").trim();
-  const body = (document.getElementById("aBody")?.value || "").trim();
   if(!title){
     showSheet("Помилка", `<div class="hint">Вкажи заголовок оголошення.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
-    return;
-  }
-  if(body.length < 3){
-    showSheet("Помилка", `<div class="hint">Текст оголошення має бути мінімум 3 символи.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
 
@@ -3691,10 +3663,10 @@ function createAnnouncementNow(){
     id,
     type: "personal",
     title,
-    description: body,
+    description: "",
     departmentId: null,
     responsibleUserId: u.id,
-    priority: "звичайний",
+    priority: null,
     status: "в_процесі",
     startDate: today,
     dueDate: null,
@@ -4076,13 +4048,11 @@ function viewProfile(){
   const tabs = (u.role==="boss")
     ? [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
-      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
     ]
     : [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
-      {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     ];
 
@@ -4399,7 +4369,6 @@ function viewAnalytics(){
 
   const tabs = [
     {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
-    {key:ROUTES.REPORTS, label:"Звіти", ico:"📝"},
     {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
   ];
