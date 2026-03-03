@@ -512,6 +512,12 @@ function isOverdue(task){
   const dueMin = (hh || 0)*60 + (mm || 0);
   return nowMin >= dueMin;
 }
+function isDueToday(task){
+  if(!task?.dueDate) return false;
+  const {date} = splitDateTime(task.dueDate);
+  if(!date) return false;
+  return date === kyivDateStr();
+}
 function needsControl(task){
   const today = kyivDateStr();
   if(task.controlAlways) return true;
@@ -2399,6 +2405,7 @@ function viewTasks(){
     const blocker = (t.status==="блокер" || t.status==="очікування") ? lastBlockerUpdate(t) : null;
     const blockerNote = blocker?.note ? htmlesc(blocker.note).slice(0,120) : "";
     const isLate = isOverdue(t);
+    const isDueTodayTask = isDueToday(t) && !isLate;
     const isDone = t.status==="закрито";
     const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
     const desc = (t.description || "").trim();
@@ -2412,7 +2419,7 @@ function viewTasks(){
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
-      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}">
+      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">
@@ -2615,6 +2622,10 @@ function quickActionsForTask(u, t){
   if(!canUpdate || t.status==="закрито") return "";
 
   const btns = [];
+  const isBlocked = (t.status==="блокер" || t.status==="очікування");
+  const blockerBtn = isBlocked
+    ? `<button class="btn warn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="в_процесі">🔓 Розблок</button>`
+    : `<button class="btn warn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="блокер">⛔ Блокер</button>`;
 
   if(isBoss){
     if(t.type==="managerial" && t.status==="очікує_підтвердження"){
@@ -2622,7 +2633,7 @@ function quickActionsForTask(u, t){
     } else {
       btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Закрити</button>`);
     }
-    btns.push(`<button class="btn warn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="блокер">⛔ Блокер</button>`);
+    btns.push(blockerBtn);
   } else {
     if(t.type==="internal"){
       btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Закрити</button>`);
@@ -2630,7 +2641,7 @@ function quickActionsForTask(u, t){
     if(t.type==="managerial"){
       btns.push(`<button class="btn violet" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="очікує_підтвердження">🟣 Запит закриття</button>`);
     }
-    btns.push(`<button class="btn warn" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="блокер">⛔ Блокер</button>`);
+    btns.push(blockerBtn);
   }
 
   if(canEditTask(u, t)){
@@ -2928,7 +2939,7 @@ function openTask(taskId){
     : (t.type==="internal")
       ? "task-title-type-internal"
       : "task-title-type-personal";
-  const titleClass = t.dueDate ? "task-title-due" : titleTypeClass;
+  const titleClass = isDueToday(t) ? "task-title-due-today" : (t.dueDate ? "task-title-due" : titleTypeClass);
   let deptNum = UI.taskIndexMap?.[t.id];
   if(!deptNum){
     const key = t.departmentId || "personal";

@@ -305,6 +305,7 @@
     .task-item[data-type="internal"]::after{background:#4b5f82;}
     .task-item[data-type="personal"]::after{background:#7151a8;}
     .task-item.has-due::after{background:#2f9a5d;}
+    .task-item.due-today::after{background:#b56a6a;}
     .task-item.ctrl-date::after{background:#6ea8fe;}
     .task-item.ctrl-always::after{background:#8b6fe0;}
     .task-item.is-overdue::after{background:#ff5c7a;}
@@ -312,6 +313,7 @@
     .task-item.ctrl-date{border-color: rgba(110,168,254,.45);}
     .task-item.ctrl-always{border-color: transparent;}
     .task-item.has-due .task-line .name{color:#2f9a5d;}
+    .task-item.due-today .task-line .name{color:#b56a6a;}
     .item:active{transform: scale(.99)}
     .item .row{display:flex;align-items:flex-start;justify-content: space-between;gap:10px;}
     .item .row .name{font-weight:900;font-size:14px;line-height:1.2;}
@@ -557,6 +559,7 @@
     .task-title-type-internal{color:#4b5f82;}
     .task-title-type-personal{color:#7151a8;}
     .task-title-due{color:#2f9a5d;}
+    .task-title-due-today{color:#b56a6a;}
     .task-item.is-completed .task-title .name{
       text-decoration: line-through;
       color:#000;
