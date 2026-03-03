@@ -1282,6 +1282,8 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
   const deadlineInfo = weekend ? "Вихідний" : "Дедлайн звіту: 17:30";
   const themeIcon = UI.theme === "dark" ? "☀️" : "🌙";
   const themeTitle = UI.theme === "dark" ? "Світла тема" : "Темна тема";
+  const syncTitle = _syncReady ? "Дані завантажено" : (_syncInitDone ? "Дані не завантажено" : "Завантаження даних...");
+  const syncDot = SYNC_URL ? `<span class="sync-dot ${_syncReady ? "ok" : "err"}" title="${syncTitle}"></span>` : ``;
   const compactTasks = !!(u && u.role==="boss" && UI.tab===ROUTES.TASKS && UI.taskDeptFilter && !["all","personal"].includes(UI.taskDeptFilter));
   const scopeAll = !!(u && u.role==="boss" && UI.tab===ROUTES.TASKS && UI.taskDeptFilter==="all");
   const scopeDept = !!(u && UI.tab===ROUTES.TASKS && (u.role!=="boss" || (u.role==="boss" && UI.taskDeptFilter && !["all","personal"].includes(UI.taskDeptFilter))));
@@ -1298,6 +1300,7 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
             </div>
           </div>
           <div class="top-actions">
+            ${syncDot}
             <button class="iconbtn" data-action="openHelp" title="Довідка">❓</button>
             <button class="iconbtn" data-action="toggleTheme" title="${themeTitle}">${themeIcon}</button>
             <button class="iconbtn" data-action="goProfile" title="Профіль">👤</button>
@@ -1351,6 +1354,8 @@ function viewLogin(){
   const themeIcon = UI.theme === "dark" ? "☀️" : "🌙";
   const themeTitle = UI.theme === "dark" ? "Світла тема" : "Темна тема";
   const syncLoading = !!SYNC_URL && !_syncInitDone;
+  const syncTitle = _syncReady ? "Дані завантажено" : (_syncInitDone ? "Дані не завантажено" : "Завантаження даних...");
+  const syncDot = SYNC_URL ? `<span class="sync-dot ${_syncReady ? "ok" : "err"}" title="${syncTitle}"></span>` : ``;
   document.body.classList.remove("role-boss");
   const html = `
     <div class="app">
@@ -1365,6 +1370,7 @@ function viewLogin(){
           </div>
           <div class="top-actions">
             <div class="pill mono">${kyivDateStr()}</div>
+            ${syncDot}
             <button class="iconbtn" data-action="openHelp" title="Довідка">❓</button>
             <button class="iconbtn" data-action="toggleTheme" title="${themeTitle}">${themeIcon}</button>
           </div>
