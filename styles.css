@@ -612,7 +612,7 @@
     .task-token.token-due .token-text{
       font-weight: 900;
     }
-    .task-token.priority-hot{
+    .task-token.complexity-hard{
       color: #c34762;
     }
     .task-token.token-announcement{
@@ -684,7 +684,7 @@
       .qa-full{display:none;}
       .qa-short{display:inline;}
       .task-token.token-status{display:none;}
-      .task-token.token-priority{display:none;}
+      .task-token.token-complexity{display:none;}
       .task-item.ctrl-always .task-token.token-due .token-text{display:none;}
       .task-item.ctrl-always .task-token.token-due .token-ico{display:inline;}
       .task-item.has-due .task-token.token-due.due-hot .token-text{color:#c34762;}
