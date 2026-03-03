@@ -1509,18 +1509,7 @@ function viewControl(){
   const today = kyivDateStr();
   const weekend = isWeekend(kyivNow());
 
-  const visibleExecutors = (u.role==="boss")
-    ? STATE.users.filter(x=>x.active && x.role==="executor")
-    : STATE.users.filter(x=>x.active && x.role==="executor" && x.departmentId===u.departmentId);
-
-  const reportsToday = STATE.dailyReports.filter(r=>r.reportDate===today);
-  const missing = weekend ? [] : visibleExecutors.filter(x=>!reportsToday.some(r=>r.userId===x.id));
-  const late = weekend ? [] : reportsToday.filter(r=>{
-    const usr = getUserById(r.userId);
-    if(!usr) return false;
-    if(u.role!=="boss" && usr.departmentId!==u.departmentId) return false;
-    return r.isLate;
-  });
+  // Блок "Не здали до 17:30" прибрано з контролю.
 
   const tasksVis = getVisibleTasksForUser(u);
   const requestClose = tasksVis.filter(t=>t.type==="managerial" && t.status==="очікує_підтвердження");
@@ -1587,14 +1576,6 @@ function viewControl(){
             </div>
           </div>
           ` : ``}
-
-          <div class="stat" data-action="openMissing">
-            <div class="l">
-              <div class="k">🔴 Не здали до 17:30</div>
-              <div class="d">${u.role==="boss" ? "По всіх відділах" : "По вашому відділу"}</div>
-            </div>
-            <div class="r"><span class="mono">${missing.length}</span> ›</div>
-          </div>
 
           <div class="stat" data-action="openTaskList" data-arg1="очікує_підтвердження">
             <div class="l">
