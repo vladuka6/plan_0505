@@ -1358,6 +1358,9 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
               <div class="s">${htmlesc(subtitle)} • <span class="mono">${date}</span> • ${deadlineInfo}</div>
             </div>
           </div>
+          <div class="top-tabs">
+            ${renderTabs(tabs)}
+          </div>
           <div class="top-actions">
             ${syncDot}
             <button class="iconbtn" data-action="openHelp" title="Довідка">❓</button>
