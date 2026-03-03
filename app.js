@@ -485,6 +485,14 @@ function getCloseUpdate(task){
   if(task.status==="закрито") return {at: task.updatedAt || "", note: ""};
   return null;
 }
+function normalizeCloseNote(note){
+  if(!note) return "";
+  return String(note)
+    .replace(/^Статус\s*→\s*[^:]+:\s*/i, "")
+    .replace(/^Розблоковано\s*→\s*[^:]+:\s*/i, "")
+    .replace(/^Закрито:\s*/i, "")
+    .trim();
+}
 function isOverdue(task){
   if(!task?.dueDate) return false;
   if(task.status === "закрито" || task.status === "скасовано") return false;
@@ -2350,7 +2358,7 @@ function viewTasks(){
     const prHot = (t.priority==="високий" || t.priority==="терміново");
     const ctrl = controlMeta(t);
     const dueHot = !!t.dueDate && prHot;
-    const hideStatus = t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate);
+    const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
     const blocker = (t.status==="блокер" || t.status==="очікування") ? lastBlockerUpdate(t) : null;
     const blockerNote = blocker?.note ? htmlesc(blocker.note).slice(0,120) : "";
     const isLate = isOverdue(t);
@@ -2361,8 +2369,8 @@ function viewTasks(){
     const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
     const closeShort = isDone ? closeDisplay(closeAt) : "";
     const closeHint = isDone ? closeTitle(closeAt) : "";
-    const closeNote = isDone ? (closeUpd?.note || "") : "";
-    const resultHtml = isDone ? `<div class="task-result">Результат: ${closeNote ? htmlesc(closeNote) : "—"}</div>` : "";
+    const closeNote = isDone ? normalizeCloseNote(closeUpd?.note || "") : "";
+    const resultHtml = isDone ? `<div class="task-result">Результат:${closeNote ? htmlesc(closeNote) : "—"}</div>` : "";
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
@@ -2564,7 +2572,7 @@ function quickActionsForTask(u, t){
   const {isDeptHeadLike} = asDeptRole(u);
   const isBoss = (u.role==="boss");
   const canUpdate = isBoss || isDeptHeadLike;
-  if(!canUpdate) return "";
+  if(!canUpdate || t.status==="закрито") return "";
 
   const btns = [];
 
@@ -2733,6 +2741,8 @@ function submitStatusReason(taskId, status){
   let note = `Статус → ${statusLabel(status)}: ${reason}`;
   if(isBlocking){
     note = `Блокер: ${reason}`;
+  } else if(status==="закрито"){
+    note = reason;
   } else if(wasBlocked && !stillBlocked){
     note = `Розблоковано → ${statusLabel(status)}: ${reason}`;
   }
@@ -2866,13 +2876,13 @@ function openTask(taskId){
   const prHot = (t.priority==="високий" || t.priority==="терміново");
   const dueHot = !!t.dueDate && prHot;
   const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
-  const hideStatus = t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate);
+  const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
   const isDone = t.status==="закрито";
   const closeUpd = isDone ? getCloseUpdate(t) : null;
   const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
   const closeShort = isDone ? closeDisplay(closeAt) : "";
   const closeHint = isDone ? closeTitle(closeAt) : "";
-  const closeNote = isDone ? (closeUpd?.note || "") : "";
+  const closeNote = isDone ? normalizeCloseNote(closeUpd?.note || "") : "";
   const titleTypeClass = (t.type==="managerial")
     ? "task-title-type-managerial"
     : (t.type==="internal")
@@ -2932,7 +2942,7 @@ function openTask(taskId){
       </div>
 
       <div class="hint"><b>Опис:</b> ${t.description ? htmlesc(t.description) : "—"}</div>
-      ${isDone ? `<div class="hint"><b>Результат:</b> ${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
+      ${isDone ? `<div class="hint"><b>Результат:</b>${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
 
       <details class="task-disclosure" ${upd.length ? "" : "open"}>
         <summary>Оновлення (${upd.length})</summary>
@@ -2946,7 +2956,11 @@ function openTask(taskId){
       </details>
     </div>
     <div class="sep"></div>
-    ${quickActionsForTask(u, t) || `<button class="btn primary" data-action="hideSheet">Закрити</button>`}
+    ${
+      isDone
+        ? `<button class="btn primary" data-action="hideSheet">OK</button>`
+        : (quickActionsForTask(u, t) || `<button class="btn primary" data-action="hideSheet">Закрити</button>`)
+    }
   `);
 }
 
