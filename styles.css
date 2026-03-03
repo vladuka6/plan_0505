@@ -171,8 +171,8 @@
     .task-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom: 5px;}
     .search-inline{margin-top:0;}
     .search-inline label{display:none;}
-    .search-inline input{width:clamp(180px, 24vw, 240px);max-width:100%;}
-    body.personal-announcements .search-inline input{width:clamp(140px, 18vw, 200px);}
+    .search-inline input{width:clamp(154px, 18vw, 240px);max-width:100%;}
+    body.personal-announcements .search-inline input{width:clamp(140px, 16vw, 200px);}
     body.scope-all .task-meta .token-dept{display:none;}
     body.scope-all .task-meta .token-user{display:none;}
     body.scope-all .task-item.has-due .task-meta .token-ctrl{display:none;}
