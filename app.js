@@ -2358,11 +2358,11 @@ function viewTasks(){
     const prHot = (t.priority==="високий" || t.priority==="терміново");
     const ctrl = controlMeta(t);
     const dueHot = !!t.dueDate && prHot;
-    const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
     const blocker = (t.status==="блокер" || t.status==="очікування") ? lastBlockerUpdate(t) : null;
     const blockerNote = blocker?.note ? htmlesc(blocker.note).slice(0,120) : "";
     const isLate = isOverdue(t);
     const isDone = t.status==="закрито";
+    const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
     const desc = (t.description || "").trim();
     const descHtml = desc ? `<div class="task-desc">Опис: ${htmlesc(desc)}</div>` : "";
     const closeUpd = isDone ? getCloseUpdate(t) : null;
@@ -2875,9 +2875,9 @@ function openTask(taskId){
   const ctrl = controlMeta(t);
   const prHot = (t.priority==="високий" || t.priority==="терміново");
   const dueHot = !!t.dueDate && prHot;
+  const isDone = t.status==="закрито";
   const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
   const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
-  const isDone = t.status==="закрито";
   const closeUpd = isDone ? getCloseUpdate(t) : null;
   const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
   const closeShort = isDone ? closeDisplay(closeAt) : "";
