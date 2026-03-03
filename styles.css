@@ -281,6 +281,10 @@
     }
     .done-toggle summary::-webkit-details-marker{display:none;}
     .done-list{display:flex;flex-direction:column;gap:10px;margin-top:8px;}
+    .announcement-block{display:flex;flex-direction:column;gap:12px;margin-bottom:12px;}
+    .announcement-section{display:flex;flex-direction:column;gap:8px;}
+    .announcement-title{font-weight:900;font-size:12px;color:var(--muted);}
+    .announcement-list{display:flex;flex-direction:column;gap:10px;}
     .item{
       padding: 12px;border-radius: var(--radius2);
       background: rgba(255,255,255,.72);
@@ -294,6 +298,10 @@
       background: rgba(255,255,255,.86);
       box-shadow: 0 10px 22px rgba(25,35,60,.08);
     }
+    .task-item.announcement-item{
+      border-style: dashed;
+      background: rgba(255,255,255,.92);
+    }
     .task-item::after{
       content:"";
       position:absolute;
@@ -302,6 +310,7 @@
       border-radius: var(--radius2) 0 0 var(--radius2);
       background:#2d5fbd;
     }
+    .task-item.announcement-item::after{background:#b38b5e;}
     .task-item[data-type="internal"]::after{background:#4b5f82;}
     .task-item[data-type="personal"]::after{background:#7151a8;}
     .task-item.has-due::after{background:#2f9a5d;}
@@ -492,6 +501,7 @@
       text-overflow:ellipsis;
       max-width:520px;
     }
+    .task-item.announcement-item .task-desc{display:block;}
     .task-search-meta{
       font-size:12px;
       color: var(--muted);
@@ -597,6 +607,12 @@
     }
     .task-token.priority-hot{
       color: #c34762;
+    }
+    .task-token.token-announcement{
+      border:1px solid rgba(179,139,94,.35);
+      background: rgba(179,139,94,.14);
+      color:#7a5a34;
+      font-weight:900;
     }
     .qa-short{display:none;}
     .token-flag{
@@ -872,6 +888,11 @@
       border-color: rgba(35,42,58,.75);
       background: rgba(21,25,37,.75);
       color: var(--muted);
+    }
+    body.theme-dark .task-token.token-announcement{
+      border-color: rgba(179,139,94,.45);
+      background: rgba(179,139,94,.18);
+      color:#e6d6c2;
     }
     body.theme-dark .task-title-type-managerial{color:#cfe2ff;}
     body.theme-dark .task-title-type-internal{color:#c3cce0;}

@@ -542,8 +542,8 @@ function dateDiffDays(a,b){
 }
 function getVisibleTasksForUser(u){
   if(!u) return [];
-  if(u.role==="boss") return STATE.tasks.slice();
-  return STATE.tasks.filter(t=>t.departmentId===u.departmentId);
+  if(u.role==="boss") return STATE.tasks.filter(t=>!isAnnouncement(t));
+  return STATE.tasks.filter(t=>!isAnnouncement(t) && t.departmentId===u.departmentId);
 }
 function updateTask(taskId, patch, authorId, note){
   const idx = STATE.tasks.findIndex(t=>t.id===taskId);
@@ -561,12 +561,13 @@ function updateTask(taskId, patch, authorId, note){
 }
 function createTask(task, authorId){
   STATE.tasks.push(task);
+  const note = task?.category === "announcement" ? "Створено оголошення" : "Створено задачу";
   STATE.taskUpdates.push({
     id: uid("upd"),
     taskId: task.id,
     authorUserId: authorId,
     at: nowIsoKyiv(),
-    note: "Створено задачу",
+    note,
     status: task.status
   });
   saveState(STATE);
@@ -618,6 +619,27 @@ function taskTypeLabel(type){
   if(type==="internal") return "Внутрішня";
   if(type==="personal") return "Моя задача";
   return type;
+}
+function isAnnouncement(t){
+  return !!t && t.category === "announcement";
+}
+function announcementAudienceLabel(a){
+  if(a === "meeting") return "Нарада";
+  return "Особовий склад";
+}
+function canSeeAnnouncement(u, t){
+  if(!u || !isAnnouncement(t)) return false;
+  if(u.role === "boss") return true;
+  if(t.audience === "staff") return true;
+  if(t.audience === "meeting"){
+    const {isDeptHeadLike} = asDeptRole(u);
+    return !!isDeptHeadLike;
+  }
+  return false;
+}
+function getVisibleAnnouncementsForUser(u){
+  if(!u) return [];
+  return STATE.tasks.filter(isAnnouncement).filter(t=>canSeeAnnouncement(u, t));
 }
 function taskExportRows(tasks){
   return tasks.map(t=>{
@@ -1248,6 +1270,7 @@ let UI = {
   taskFilter: "активні",
   taskDeptFilter: "all",
   taskSearch: "",
+  taskPersonalFilter: "all",
   taskIndexMap: {},
   reportFilter: "сьогодні",
   reportsControlDate: null, // NEW
@@ -2202,6 +2225,7 @@ function openDeptSummary(summaryId){
 =========================== */
 function setTaskFilter(k){ UI.taskFilter = k; render(); }
 function setTaskDeptFilter(k){ UI.taskDeptFilter = k; render(); }
+function setTaskPersonalFilter(k){ UI.taskPersonalFilter = k; render(); }
 function toggleTaskScope(){
   UI.taskDeptFilter = (UI.taskDeptFilter === "personal") ? "all" : "personal";
   render();
@@ -2220,18 +2244,24 @@ function viewTasks(){
   if(!ensureLoggedIn()) return viewLogin();
   recomputeDelegationStatuses();
   const u = currentSessionUser();
+  const {isDeptHeadLike} = asDeptRole(u);
   UI.tab = ROUTES.TASKS;
 
   let tasks = getVisibleTasksForUser(u);
   const filter = UI.taskFilter;
   const deptFilter = UI.taskDeptFilter || "all";
   const taskSearch = UI.taskSearch || "";
+  const personalFilter = UI.taskPersonalFilter || "all";
+  const showAnnouncementsScope = (u.role!=="boss") || (u.role==="boss" && deptFilter==="personal");
+  const effectivePersonalFilter = showAnnouncementsScope ? personalFilter : "tasks";
+  let announcements = showAnnouncementsScope ? getVisibleAnnouncementsForUser(u) : [];
   const deptLabel = (t)=> t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
   const matchesSearch = (t)=>{
     if(!taskSearch) return true;
     const dept = t.departmentId ? getDeptById(t.departmentId)?.name : "Особисто";
     const resp = getUserById(t.responsibleUserId)?.name || "";
-    const hay = `${t.title} ${t.id} ${dept} ${resp}`.toLowerCase();
+    const aud = isAnnouncement(t) ? announcementAudienceLabel(t.audience) : "";
+    const hay = `${t.title} ${t.id} ${dept} ${resp} ${aud}`.toLowerCase();
     return hay.includes(taskSearch);
   };
   const highlightMatch = (text)=>{
@@ -2315,7 +2345,7 @@ function viewTasks(){
     return ad.localeCompare(bd);
   };
 
-  const filtered = tasks.filter(t=>{
+  const filterFn = (t)=>{
     if(filter==="активні") return t.status!=="закрито" && t.status!=="скасовано";
     if(filter==="прострочені") return isOverdue(t);
     if(filter==="очікує_підтвердження") return t.type==="managerial" && t.status==="очікує_підтвердження";
@@ -2323,7 +2353,13 @@ function viewTasks(){
     if(filter==="без_оновлень") return staleTask(t,7);
     if(filter==="закриті") return t.status==="закрито";
     return true;
-  }).filter(matchesSearch).sort(taskSort);
+  };
+
+  const filtered = tasks.filter(filterFn).filter(matchesSearch).sort(taskSort);
+  const filteredAnnouncements = announcements
+    .filter(filterFn)
+    .filter(matchesSearch)
+    .sort((a,b)=>(b.updatedAt || "").localeCompare(a.updatedAt || ""));
 
   const chips = `
     <div class="chips task-chips">
@@ -2335,6 +2371,13 @@ function viewTasks(){
       <div class="chip ${filter==="закриті"?"active":""}" data-action="setTaskFilter" data-arg1="закриті"><span class="chip-ico">✅</span><span class="chip-text">Закриті</span></div>
     </div>
   `;
+  const personalChips = showAnnouncementsScope ? `
+    <div class="chips task-chips personal-chips">
+      <div class="chip ${personalFilter==="all"?"active":""}" data-action="setTaskPersonalFilter" data-arg1="all">Все</div>
+      <div class="chip ${personalFilter==="tasks"?"active":""}" data-action="setTaskPersonalFilter" data-arg1="tasks">Задачі</div>
+      <div class="chip ${personalFilter==="announcements"?"active":""}" data-action="setTaskPersonalFilter" data-arg1="announcements">Оголошення</div>
+    </div>
+  ` : ``;
   const deptChips = (u.role==="boss") ? `
     <div class="chips dept-chips task-chips">
       ${STATE.departments.map(d=>{
@@ -2346,14 +2389,21 @@ function viewTasks(){
   ` : ``;
   const searchUi = `
     <div class="field search-inline">
-      <label>Пошук задач</label>
+      <label>Пошук задач / оголошень</label>
       <div class="row" style="gap:8px;">
-        <input id="taskSearchInput" type="text" value="${htmlesc(UI.taskSearch)}" placeholder="Назва / відділ / виконавець" data-change="setTaskSearchFromInput" />
+        <input id="taskSearchInput" type="text" value="${htmlesc(UI.taskSearch)}" placeholder="Назва / відділ / виконавець / аудиторія" data-change="setTaskSearchFromInput" />
         ${UI.taskSearch ? `<button class="btn ghost" data-action="clearTaskSearch">Скинути</button>` : ``}
       </div>
     </div>
   `;
-  const searchHint = `<div class="hint">Показано: <span class="mono">${filtered.length}</span> із <span class="mono">${tasks.length}</span></div>`;
+  const showTasks = effectivePersonalFilter!=="announcements";
+  const showAnns = showAnnouncementsScope && effectivePersonalFilter!=="tasks";
+  const shownCount = (showTasks ? filtered.length : 0) + (showAnns ? filteredAnnouncements.length : 0);
+  const totalCount = (showTasks ? tasks.length : 0) + (showAnns ? announcements.length : 0);
+  const searchHint = `<div class="hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${totalCount}</span></div>`;
+  const announcementBtn = (u.role==="boss" && showAnnouncementsScope)
+    ? `<button class="btn ghost" data-action="openCreateAnnouncement">📣 Оголошення</button>`
+    : ``;
   const buildDeptIndexMap = (list)=>{
     const map = {};
     const counts = {};
@@ -2391,8 +2441,11 @@ function viewTasks(){
     const deptName = t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
     const respName = getUserById(t.responsibleUserId)?.name || "—";
     const titleHtml = highlightMatch(t.title || "");
+    const isAnn = isAnnouncement(t);
+    const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
+    const annBadge = isAnn ? `<span class="task-token token-announcement" title="Оголошення">${highlightMatch(annLabel)}</span>` : "";
     const searchMeta = taskSearch
-      ? `<div class="task-search-meta">ID: <span class="mono">${highlightMatch(t.id)}</span> • ${highlightMatch(deptName)} • ${highlightMatch(respName)}</div>`
+      ? `<div class="task-search-meta">ID: <span class="mono">${highlightMatch(t.id)}</span> • ${highlightMatch(deptName)} • ${highlightMatch(respName)}${isAnn ? ` • ${highlightMatch(annLabel)}` : ""}</div>`
       : "";
 
     const dueShort = t.dueDate ? dueDisplay(t.dueDate) : "—";
@@ -2409,7 +2462,8 @@ function viewTasks(){
     const isDone = t.status==="закрито";
     const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
     const desc = (t.description || "").trim();
-    const descHtml = desc ? `<div class="task-desc">Опис: ${htmlesc(desc)}</div>` : "";
+    const descLabel = isAnn ? "Текст" : "Опис";
+    const descHtml = desc ? `<div class="task-desc">${descLabel}: ${htmlesc(desc)}</div>` : "";
     const closeUpd = isDone ? getCloseUpdate(t) : null;
     const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
     const closeShort = isDone ? closeDisplay(closeAt) : "";
@@ -2419,7 +2473,7 @@ function viewTasks(){
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
-      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}">
+      <div class="item task-item ${isAnn ? "announcement-item" : ""} ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">
@@ -2443,6 +2497,7 @@ function viewTasks(){
                     )
                 }
                 <span class="task-token token-priority ${prHot ? "priority-hot" : ""} compact-hide" title="Пріоритет"><span class="token-ico">${prIcon}</span><span class="token-text">${htmlesc(prLabel)}</span></span>
+                ${annBadge}
               </div>
             </div>
           </div>
@@ -2529,20 +2584,47 @@ function viewTasks(){
     if(filter==="закриті") return `<div class="hint">Немає закритих задач за цим фільтром.</div>`;
     return `<div class="hint">Немає задач за цим фільтром.</div>`;
   })();
-  let list = "";
+  let tasksList = "";
   if(filtered.length){
     if(isScopeAll){
-      list = renderGroupedList(filtered);
+      tasksList = renderGroupedList(filtered);
     } else {
       const doneBlock = showDoneToggle ? renderDoneToggle(completed, filtered.length) : "";
-      list = filtered.map(renderTaskItem).join("") + doneBlock;
+      tasksList = filtered.map(renderTaskItem).join("") + doneBlock;
     }
   } else if(showDoneToggle && completed.length){
     const doneBlock = renderDoneToggle(completed, 0);
-    list = `<div class="hint">Немає активних задач.</div>${doneBlock}`;
+    tasksList = `<div class="hint">Немає активних задач.</div>${doneBlock}`;
   } else {
-    list = emptyHint;
+    tasksList = emptyHint;
   }
+
+  const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
+  const staffAnnouncements = filteredAnnouncements.filter(t=>t.audience !== "meeting");
+  const meetingAnnouncements = filteredAnnouncements.filter(t=>t.audience === "meeting");
+  const renderAnnouncementSection = (title, list)=>`
+    <div class="announcement-section">
+      <div class="announcement-title">${title} <span class="mono">${list.length}</span></div>
+      <div class="announcement-list">
+        ${list.length ? list.map(renderTaskItem).join("") : `<div class="hint">Немає оголошень.</div>`}
+      </div>
+    </div>
+  `;
+  const announcementsBlock = showAnnouncementsScope ? `
+    <div class="announcement-block">
+      ${renderAnnouncementSection("Оголошення для особового складу", staffAnnouncements)}
+      ${canSeeMeetingAnnouncements ? renderAnnouncementSection("Оголошення для наради", meetingAnnouncements) : ``}
+    </div>
+  ` : "";
+
+  const listParts = [];
+  if(showAnnouncementsScope && effectivePersonalFilter!=="tasks"){
+    listParts.push(announcementsBlock);
+  }
+  if(effectivePersonalFilter!=="announcements"){
+    listParts.push(tasksList);
+  }
+  const list = listParts.join("");
 
   const body = `
     <div class="card">
@@ -2550,12 +2632,14 @@ function viewTasks(){
         <div class="t">Задачі</div>
         <div style="display:flex;align-items:center;gap:8px;">
           ${u.role==="boss" ? `<button class="btn ghost" data-action="openTasksExportDialog">⬇️ Excel</button>` : ``}
+          ${announcementBtn}
           ${u.role==="boss" ? `<button class="btn ghost" data-action="toggleTaskScope">${UI.taskDeptFilter==="personal" ? "Мої" : "Всі"}</button>` : `<span class="badge b-blue">Мій відділ</span>`}
         </div>
       </div>
       <div class="card-b">
         <div class="task-toolbar">
           ${chips}
+          ${personalChips}
           ${searchUi}
         </div>
         ${deptChips}
@@ -2621,6 +2705,17 @@ function quickActionsForTask(u, t){
   const canUpdate = isBoss || isDeptHeadLike;
   if(!canUpdate || t.status==="закрито") return "";
 
+  const isAnn = isAnnouncement(t);
+  if(isAnn){
+    if(!isBoss) return "";
+    const btns = [];
+    btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Виконано</button>`);
+    if(canEditTask(u, t)){
+      btns.push(`<button class="btn ghost" data-action="openEditTask" data-arg1="${t.id}">✏️ Редагувати</button>`);
+    }
+    return `<div class="actions">${btns.join("")}</div>`;
+  }
+
   const btns = [];
   const isBlocked = (t.status==="блокер" || t.status==="очікування");
   const blockerBtn = isBlocked
@@ -2676,6 +2771,38 @@ function openStatusReasonModal(taskId, status){
     </div>
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="submitStatusReason" data-arg1="${t.id}" data-arg2="${status}">Зберегти</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+
+function openEditAnnouncement(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Оголошення може редагувати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  showSheet("Редагувати оголошення", `
+    <div class="hint">Оголошення: <b>${htmlesc(t.id)}</b></div>
+    <div class="field">
+      <label>Аудиторія</label>
+      <select id="aAudience">
+        <option value="staff" ${t.audience==="staff" ? "selected" : ""}>Особовий склад</option>
+        <option value="meeting" ${t.audience==="meeting" ? "selected" : ""}>Нарада (керівництво)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Заголовок</label>
+      <input id="aTitle" value="${htmlesc(t.title)}" />
+    </div>
+    <div class="field">
+      <label>Текст</label>
+      <textarea id="aBody">${htmlesc(t.description || "")}</textarea>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="saveAnnouncementEdits" data-arg1="${t.id}">Зберегти</button>
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
     </div>
   `);
@@ -2773,6 +2900,10 @@ function submitStatusReason(taskId, status){
 
   const {isDeptHeadLike} = asDeptRole(u);
   const isBoss = (u.role==="boss");
+  if(isAnnouncement(t) && !isBoss){
+    showSheet("Немає прав", `<div class="hint">Оголошення може змінювати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
   if(!(isBoss || isDeptHeadLike)){
     showSheet("Немає прав", `<div class="hint">Тільки начальник відділу (або в.о.) може змінювати статуси.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
@@ -2810,6 +2941,16 @@ function setTaskStatus(taskId, status, bypassConfirm=false){
   if(!t) return;
 
   const {isDeptHeadLike} = asDeptRole(u);
+  if(isAnnouncement(t) && u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Оголошення може змінювати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(isAnnouncement(t) && status==="закрито"){
+    updateTask(taskId, {status}, u.id, "Оголошення виконано");
+    render();
+    showToast(`Статус оновлено: ${statusLabel(status)}`, "ok");
+    return;
+  }
 
   if(!(u.role==="boss" || isDeptHeadLike)){
     showSheet("Немає прав", `<div class="hint">Тільки начальник відділу (або в.о.) може змінювати статуси.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
@@ -2915,8 +3056,12 @@ function openTask(taskId){
     showSheet("Немає доступу", `<div class="hint">Ця задача належить іншому відділу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
-  if(t.type==="personal" && u.role!=="boss"){
+  if(t.type==="personal" && u.role!=="boss" && !isAnnouncement(t)){
     showSheet("Немає доступу", `<div class="hint">Особисті задачі бачить тільки керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(isAnnouncement(t) && !canSeeAnnouncement(u, t)){
+    showSheet("Немає доступу", `<div class="hint">Це оголошення не призначене для вашої ролі.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
 
@@ -2927,6 +3072,9 @@ function openTask(taskId){
   const prHot = (t.priority==="високий" || t.priority==="терміново");
   const dueHot = !!t.dueDate && prHot;
   const isDone = t.status==="закрито";
+  const isAnn = isAnnouncement(t);
+  const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
+  const descLabel = isAnn ? "Текст" : "Опис";
   const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
   const hideStatus = isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
   const closeUpd = isDone ? getCloseUpdate(t) : null;
@@ -2970,7 +3118,7 @@ function openTask(taskId){
     deptNum = idx>=0 ? idx+1 : null;
   }
 
-  showSheet("Картка задачі", `
+  showSheet(isAnn ? "Оголошення" : "Картка задачі", `
     <div class="item task-sheet-compact" style="cursor:default;">
       <div class="task-line">
         <div class="task-title">
@@ -2992,7 +3140,8 @@ function openTask(taskId){
         </div>
       </div>
 
-      <div class="hint"><b>Опис:</b> ${t.description ? htmlesc(t.description) : "—"}</div>
+      ${isAnn ? `<div class="hint"><b>Аудиторія:</b> ${htmlesc(annLabel)}</div>` : ``}
+      <div class="hint"><b>${descLabel}:</b> ${t.description ? htmlesc(t.description) : "—"}</div>
       ${isDone ? `<div class="hint"><b>Результат:</b>${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
 
       <details class="task-disclosure" ${upd.length ? "" : "open"}>
@@ -3019,6 +3168,7 @@ function openEditTask(taskId){
   const u = currentSessionUser();
   const t = STATE.tasks.find(x=>x.id===taskId);
   if(!u || !t) return;
+  if(isAnnouncement(t)) return openEditAnnouncement(taskId);
 
   if(!canEditTask(u, t)){
     showSheet("Немає прав", `<div class="hint">Ви не маєте прав редагувати цю задачу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
@@ -3202,6 +3352,39 @@ function saveTaskEdits(taskId){
   hideSheet();
   render();
   showToast("Зміни збережено", "ok");
+}
+
+function saveAnnouncementEdits(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Оголошення може редагувати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const audience = document.getElementById("aAudience")?.value || "staff";
+  const title = (document.getElementById("aTitle")?.value || "").trim();
+  const body = (document.getElementById("aBody")?.value || "").trim();
+  if(!title){
+    showSheet("Помилка", `<div class="hint">Вкажи заголовок оголошення.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(body.length < 3){
+    showSheet("Помилка", `<div class="hint">Текст оголошення має бути мінімум 3 символи.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const changes = [];
+  if(title !== t.title) changes.push(`Назва: "${shorten(t.title)}" → "${shorten(title)}"`);
+  if(body !== (t.description || "")) changes.push(`Текст: "${shorten(t.description || "")}" → "${shorten(body)}"`);
+  if(audience !== (t.audience || "staff")) changes.push(`Аудиторія: ${announcementAudienceLabel(t.audience)} → ${announcementAudienceLabel(audience)}`);
+  const note = changes.length ? `Оголошення: ${changes.join("; ")}` : "Оголошення без змін";
+
+  updateTask(taskId, {title, description: body, audience}, u.id, note);
+  hideSheet();
+  render();
+  showToast("Оголошення оновлено", "ok");
 }
 
 /* ===========================
@@ -3451,6 +3634,83 @@ function createTaskNow(kind){
 
   hideSheet();
   UI.tab = ROUTES.TASKS;
+  UI.taskFilter = "активні";
+  render();
+}
+
+function openCreateAnnouncement(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Оголошення може створювати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  showSheet("Нове оголошення", `
+    <div class="field">
+      <label>Аудиторія</label>
+      <select id="aAudience">
+        <option value="staff">Особовий склад</option>
+        <option value="meeting">Нарада (керівництво)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Заголовок</label>
+      <input id="aTitle" />
+    </div>
+    <div class="field">
+      <label>Текст</label>
+      <textarea id="aBody"></textarea>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="createAnnouncementNow">Зберегти</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+
+function createAnnouncementNow(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Оголошення може створювати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const audience = document.getElementById("aAudience")?.value || "staff";
+  const title = (document.getElementById("aTitle")?.value || "").trim();
+  const body = (document.getElementById("aBody")?.value || "").trim();
+  if(!title){
+    showSheet("Помилка", `<div class="hint">Вкажи заголовок оголошення.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(body.length < 3){
+    showSheet("Помилка", `<div class="hint">Текст оголошення має бути мінімум 3 символи.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const today = kyivDateStr();
+  const id = genTaskCode("A");
+  createTask({
+    id,
+    type: "personal",
+    title,
+    description: body,
+    departmentId: null,
+    responsibleUserId: u.id,
+    priority: "звичайний",
+    status: "в_процесі",
+    startDate: today,
+    dueDate: null,
+    nextControlDate: null,
+    controlAlways: false,
+    createdBy: u.id,
+    createdAt: nowIsoKyiv(),
+    updatedAt: nowIsoKyiv(),
+    category: "announcement",
+    audience
+  }, u.id);
+
+  hideSheet();
+  UI.tab = ROUTES.TASKS;
+  if(u.role==="boss") UI.taskDeptFilter = "personal";
+  UI.taskPersonalFilter = "announcements";
   UI.taskFilter = "активні";
   render();
 }
@@ -4230,6 +4490,7 @@ const ACTIONS = {
   confirmCancelDelegation,
   confirmTaskClose,
   createDelegationNow,
+  createAnnouncementNow,
   createTaskNow,
   goProfile,
   hideSheet,
@@ -4237,6 +4498,7 @@ const ACTIONS = {
   openAbout,
   openHelp,
   openCreateTask,
+  openCreateAnnouncement,
   openDelegationCreate,
   openDelegations,
   openDeptPeople,
@@ -4257,7 +4519,9 @@ const ACTIONS = {
   applyReportTemplate,
   autoFillReport,
   saveTaskEdits,
+  saveAnnouncementEdits,
   setTaskDeptFilter,
+  setTaskPersonalFilter,
   setReportFilter,
   setTab,
   setTaskFilter,
