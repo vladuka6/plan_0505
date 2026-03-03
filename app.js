@@ -1372,6 +1372,7 @@ function renderTabs(tabs){
         return `
           <div class="tab ${active}" data-action="setTab" data-arg1="${t.key}" data-label="${htmlesc(t.label)}" title="${htmlesc(t.label)}" aria-label="${htmlesc(t.label)}">
             <div class="ico">${t.ico}</div>
+            <div class="label">${htmlesc(t.label)}</div>
           </div>
         `;
       }).join("")}
@@ -4681,5 +4682,4 @@ applyTheme(UI.theme);
 render();
 initAutoSync();
 initOverdueTicker();
-
 
