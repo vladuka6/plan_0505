@@ -1126,6 +1126,9 @@ function exportTasksExcelNow(){
     ...STATE.departments.map(d=>({name: d.name, id: d.id})),
     {name: "Особисті", id: "personal"}
   ];
+  const announcementsAll = STATE.tasks.filter(isAnnouncement).filter(t=>taskInPeriod(t, from, to));
+  const staffAnnouncements = announcementsAll.filter(t=>t.audience !== "meeting");
+  const meetingAnnouncements = announcementsAll.filter(t=>t.audience === "meeting");
   const canUseXlsx = typeof XLSX !== "undefined" && XLSX.utils && XLSX.writeFile;
   if(canUseXlsx){
     const wb = XLSX.utils.book_new();
@@ -1150,6 +1153,8 @@ function exportTasksExcelNow(){
       if(!deptTasks.length) return;
       addSheet(g.name, header, taskExportRowsFull(deptTasks));
     });
+    addSheet("Оголошення (особовий склад)", header, taskExportRowsFull(staffAnnouncements));
+    addSheet("Оголошення (керівництво)", header, taskExportRowsFull(meetingAnnouncements));
     addSheetRaw("Аналітика (візуально)", buildAnalyticsRows());
     addSheetRaw("Аналітика (таблично)", buildAnalyticsTableRows());
 
@@ -1166,6 +1171,8 @@ function exportTasksExcelNow(){
     if(!deptTasks.length) return;
     sheets.push(buildWorksheetXml(g.name, header, taskExportRowsFull(deptTasks)));
   });
+  sheets.push(buildWorksheetXml("Оголошення (особовий склад)", header, taskExportRowsFull(staffAnnouncements)));
+  sheets.push(buildWorksheetXml("Оголошення (керівництво)", header, taskExportRowsFull(meetingAnnouncements)));
   sheets.push(buildWorksheetXmlRaw("Аналітика (візуально)", buildAnalyticsRows()));
   sheets.push(buildWorksheetXmlRaw("Аналітика (таблично)", buildAnalyticsTableRows()));
   const xml = buildTasksWorkbookXml(sheets);
@@ -2637,7 +2644,7 @@ function viewTasks(){
   );
   const renderAnnouncementSection = (title, list, closedList)=>`
     <div class="announcement-section">
-      <div class="announcement-title">${title} <span class="mono">${list.length}</span></div>
+      <div class="announcement-title">${title}</div>
       <div class="announcement-list">
         ${list.length ? list.map(renderTaskItem).join("") : `<div class="hint">Немає оголошень.</div>`}
         ${renderAnnouncementDone(closedList)}
