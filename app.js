@@ -2726,7 +2726,7 @@ function viewTasks(){
       });
     });
     document.querySelectorAll(".dept-chips .chip").forEach((el)=>{
-      el.addEventListener("click", (e)=>{
+      el.addEventListener("dblclick", (e)=>{
         if(e.button !== 0) return;
         fab.click();
       });
