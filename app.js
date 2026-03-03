@@ -159,6 +159,9 @@ function ensureSyncMeta(st){
   if(!st.sync.deviceId) st.sync.deviceId = getDeviceId();
   if(typeof st.sync.revision !== "number") st.sync.revision = 0;
 }
+function stateForSync(st){
+  return {...st, session: {userId: null}};
+}
 function markStateChanged(st){
   ensureSyncMeta(st);
   st.sync.updatedAt = nowIsoKyiv();
@@ -4268,7 +4271,7 @@ async function pushSync(){
   _syncInFlight = true;
   try{
     ensureSyncMeta(STATE);
-    const payload = { state: STATE };
+    const payload = { state: stateForSync(STATE) };
     const res = await fetch(SYNC_URL, {
       method: "PUT",
       headers: {"Content-Type":"application/json"},
@@ -4300,7 +4303,9 @@ async function pullSync(){
       if(!wasInitDone) render();
       return;
     }
+    const localUserId = STATE?.session?.userId || null;
     const remote = migrateState(data.state) || data.state;
+    remote.session = {userId: localUserId};
     const isFirstSync = !_syncReady;
     _syncReady = true;
     _syncInitDone = true;
