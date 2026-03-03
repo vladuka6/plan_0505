@@ -2384,7 +2384,7 @@ function viewTasks(){
     <div class="field search-inline">
       <label>Пошук задач / оголошень</label>
       <div class="row" style="gap:8px;">
-        <input id="taskSearchInput" type="text" value="${htmlesc(UI.taskSearch)}" placeholder="Назва / відділ / виконавець / аудиторія" data-change="setTaskSearchFromInput" />
+        <input id="taskSearchInput" type="text" value="${htmlesc(UI.taskSearch)}" placeholder="" data-change="setTaskSearchFromInput" />
         ${UI.taskSearch ? `<button class="btn ghost" data-action="clearTaskSearch">Скинути</button>` : ``}
       </div>
     </div>
