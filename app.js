@@ -12,6 +12,8 @@ let _syncInFlight = false;
 let _lastPullAt = null;
 let _lastPushAt = null;
 let _overdueTimer = null;
+let _syncReady = false;
+let _syncPending = false;
 const memoryStorage = {};
 function safeGet(key){
   try{
@@ -2164,6 +2166,14 @@ function viewTasks(){
   const filter = UI.taskFilter;
   const deptFilter = UI.taskDeptFilter || "all";
   const taskSearch = UI.taskSearch || "";
+  const deptLabel = (t)=> t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
+  const matchesSearch = (t)=>{
+    if(!taskSearch) return true;
+    const dept = t.departmentId ? getDeptById(t.departmentId)?.name : "Особисто";
+    const resp = getUserById(t.responsibleUserId)?.name || "";
+    const hay = `${t.title} ${t.id} ${dept} ${resp}`.toLowerCase();
+    return hay.includes(taskSearch);
+  };
 
   if(u.role === "boss"){
     if(deptFilter === "personal"){
@@ -2173,22 +2183,8 @@ function viewTasks(){
     }
   }
 
-  const filtered = tasks.filter(t=>{
-    if(filter==="активні") return t.status!=="закрито" && t.status!=="скасовано";
-    if(filter==="прострочені") return isOverdue(t);
-    if(filter==="очікує_підтвердження") return t.type==="managerial" && t.status==="очікує_підтвердження";
-    if(filter==="блокери") return ["блокер","очікування"].includes(t.status);
-    if(filter==="без_оновлень") return staleTask(t,7);
-    if(filter==="закриті") return t.status==="закрито";
-    return true;
-  }).filter(t=>{
-    if(!taskSearch) return true;
-    const dept = t.departmentId ? getDeptById(t.departmentId)?.name : "Особисто";
-    const resp = getUserById(t.responsibleUserId)?.name || "";
-    const hay = `${t.title} ${t.id} ${dept} ${resp}`.toLowerCase();
-    return hay.includes(taskSearch);
-  }).sort((a,b)=>{
-    const isDeptScope = (u.role!=="boss") || (u.role==="boss" && deptFilter!=="all" && deptFilter!=="personal");
+  const isDeptScope = (u.role!=="boss") || (u.role==="boss" && deptFilter!=="all" && deptFilter!=="personal");
+  const taskSort = (a,b)=>{
     const bucket = (t)=>{
       if(t.dueDate) return 0;
       if(["блокер","очікування"].includes(t.status)) return 1;
@@ -2237,7 +2233,17 @@ function viewTasks(){
     const ad = dueSortKey(a.dueDate);
     const bd = dueSortKey(b.dueDate);
     return ad.localeCompare(bd);
-  });
+  };
+
+  const filtered = tasks.filter(t=>{
+    if(filter==="активні") return t.status!=="закрито" && t.status!=="скасовано";
+    if(filter==="прострочені") return isOverdue(t);
+    if(filter==="очікує_підтвердження") return t.type==="managerial" && t.status==="очікує_підтвердження";
+    if(filter==="блокери") return ["блокер","очікування"].includes(t.status);
+    if(filter==="без_оновлень") return staleTask(t,7);
+    if(filter==="закриті") return t.status==="закрито";
+    return true;
+  }).filter(matchesSearch).sort(taskSort);
 
   const chips = `
     <div class="chips task-chips">
@@ -2280,8 +2286,20 @@ function viewTasks(){
   };
   UI.taskIndexMap = buildDeptIndexMap(filtered);
 
+  const showDoneToggle = (filter === "активні");
+  const completed = showDoneToggle
+    ? tasks.filter(t=>t.status==="закрито").filter(matchesSearch).sort(taskSort)
+    : [];
+  const completedByDept = {};
+  if(showDoneToggle && completed.length){
+    completed.forEach(t=>{
+      const key = deptLabel(t);
+      if(!completedByDept[key]) completedByDept[key] = [];
+      completedByDept[key].push(t);
+    });
+  }
+
   const isScopeAll = (u.role==="boss" && deptFilter==="all");
-  const deptLabel = (t)=> t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
   const renderTaskItem = (t, idx)=>{
     const titleTypeClass = (t.type==="managerial")
       ? "task-title-type-managerial"
@@ -2302,15 +2320,19 @@ function viewTasks(){
     const blocker = (t.status==="блокер" || t.status==="очікування") ? lastBlockerUpdate(t) : null;
     const blockerNote = blocker?.note ? htmlesc(blocker.note).slice(0,120) : "";
     const isLate = isOverdue(t);
+    const isDone = t.status==="закрито";
+    const desc = (t.description || "").trim();
+    const descHtml = desc ? `<div class="task-desc">Опис: ${htmlesc(desc)}</div>` : "";
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
-      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isLate ? "is-overdue" : ""}" data-type="${t.type}" data-task-id="${t.id}">
+      <div class="item task-item ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">
               <div class="task-title">
                 <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${htmlesc(t.title)}</div>
+                ${descHtml}
                 ${blockerNote ? `<div class="task-note">⛔ ${blockerNote}</div>` : ``}
               </div>
               <div class="task-meta">
@@ -2328,6 +2350,17 @@ function viewTasks(){
           </div>
         </div>
       </div>
+    `;
+  };
+
+  const renderDoneToggle = (items, startIdx=0)=>{
+    if(!items || !items.length) return "";
+    const rows = items.map((t,i)=>renderTaskItem(t, startIdx + i)).join("");
+    return `
+      <details class="done-toggle">
+        <summary>Задачі які виконані <span class="mono">${items.length}</span></summary>
+        <div class="done-list">${rows}</div>
+      </details>
     `;
   };
 
@@ -2351,6 +2384,8 @@ function viewTasks(){
     `;
     const flush = ()=>{
       if(current === null) return;
+      const doneItems = showDoneToggle ? (completedByDept[current] || []) : [];
+      const doneBlock = doneItems.length ? renderDoneToggle(doneItems, groupItems.length) : "";
       const countsHtml = `
         <span class="dept-counts">
           ${countBadge("⏱", "Дедлайн", counts.due, "count-due")}
@@ -2365,7 +2400,7 @@ function viewTasks(){
             <span class="dept-title-text">${htmlesc(current)}</span>
             ${countsHtml}
           </summary>
-          <div class="dept-list">${groupItems.join("")}</div>
+          <div class="dept-list">${groupItems.join("")}${doneBlock}</div>
         </details>
       `);
     };
@@ -2387,7 +2422,7 @@ function viewTasks(){
     return groupHtml.join("");
   };
 
-  const list = filtered.length ? (isScopeAll ? renderGroupedList(filtered) : filtered.map(renderTaskItem).join("")) : (() => {
+  const emptyHint = (() => {
     if(filter==="блокери") return `<div class="hint">Немає блокерів. Якщо є перешкода — постав статус “Блокер”.</div>`;
     if(filter==="прострочені") return `<div class="hint">Немає прострочених задач.</div>`;
     if(filter==="очікує_підтвердження") return `<div class="hint">Немає задач на підтвердження.</div>`;
@@ -2395,6 +2430,20 @@ function viewTasks(){
     if(filter==="закриті") return `<div class="hint">Немає закритих задач за цим фільтром.</div>`;
     return `<div class="hint">Немає задач за цим фільтром.</div>`;
   })();
+  let list = "";
+  if(filtered.length){
+    if(isScopeAll){
+      list = renderGroupedList(filtered);
+    } else {
+      const doneBlock = showDoneToggle ? renderDoneToggle(completed, filtered.length) : "";
+      list = filtered.map(renderTaskItem).join("") + doneBlock;
+    }
+  } else if(showDoneToggle && completed.length){
+    const doneBlock = renderDoneToggle(completed, 0);
+    list = `<div class="hint">Немає активних задач.</div>${doneBlock}`;
+  } else {
+    list = emptyHint;
+  }
 
   const body = `
     <div class="card">
@@ -4111,11 +4160,16 @@ function stateStamp(st){
 }
 function queueSync(){
   if(!SYNC_URL) return;
+  if(!_syncReady){
+    _syncPending = true;
+    return;
+  }
+  _syncPending = false;
   if(_syncTimer) clearTimeout(_syncTimer);
   _syncTimer = setTimeout(pushSync, SYNC_DEBOUNCE_MS);
 }
 async function pushSync(){
-  if(!SYNC_URL || _syncInFlight) return;
+  if(!SYNC_URL || _syncInFlight || !_syncReady) return;
   _syncInFlight = true;
   try{
     ensureSyncMeta(STATE);
@@ -4140,15 +4194,18 @@ async function pullSync(){
     if(!res.ok){ _syncInFlight = false; return; }
     const data = await res.json();
     if(!data || !data.state){ _syncInFlight = false; return; }
+    _syncReady = true;
     const remote = migrateState(data.state) || data.state;
     const localStamp = stateStamp(STATE);
     const remoteStamp = stateStamp(remote);
     if(remoteStamp && (!localStamp || remoteStamp > localStamp)){
       STATE = remote;
       saveState(STATE, {skipSyncStamp:true});
+      _syncPending = false;
       render();
     }
     _lastPullAt = nowIsoKyiv();
+    if(_syncPending) queueSync();
   } catch{}
   _syncInFlight = false;
 }
