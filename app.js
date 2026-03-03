@@ -2496,6 +2496,18 @@ function viewTasks(){
   };
 
   appShell({title:"Задачі", subtitle, bodyHtml: body, showFab:true, fabAction, tabs});
+
+  const fab = document.getElementById("fab");
+  if(fab){
+    document.querySelectorAll(".dept-disclosure > summary").forEach((el)=>{
+      el.addEventListener("dblclick", (e)=>{
+        if(e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        fab.click();
+      });
+    });
+  }
 }
 
 function quickActionsForTask(u, t){
