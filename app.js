@@ -14,6 +14,7 @@ let _lastPushAt = null;
 let _overdueTimer = null;
 let _syncReady = false;
 let _syncPending = false;
+let _syncInitDone = !SYNC_URL;
 const memoryStorage = {};
 function safeGet(key){
   try{
@@ -1349,6 +1350,7 @@ function renderTabs(tabs){
 function viewLogin(){
   const themeIcon = UI.theme === "dark" ? "☀️" : "🌙";
   const themeTitle = UI.theme === "dark" ? "Світла тема" : "Темна тема";
+  const syncLoading = !!SYNC_URL && !_syncInitDone;
   document.body.classList.remove("role-boss");
   const html = `
     <div class="app">
@@ -1378,18 +1380,19 @@ function viewLogin(){
           <div class="card-b">
             <div class="field">
               <label>Логін</label>
-              <input id="login" placeholder="boss / head2 / head5 / e21..." autocomplete="username" />
+              <input id="login" placeholder="boss / head2 / head5 / e21..." autocomplete="username" ${syncLoading ? "disabled" : ""} />
             </div>
             <div class="field">
               <label>Пароль</label>
-              <input id="pass" placeholder="1234" type="password" autocomplete="current-password" />
+              <input id="pass" placeholder="1234" type="password" autocomplete="current-password" ${syncLoading ? "disabled" : ""} />
             </div>
 
             <div class="actions" style="margin-top:14px;">
-              <button class="btn primary" id="btnLogin">УВІЙТИ</button>
+              <button class="btn primary" id="btnLogin" ${syncLoading ? "disabled" : ""}>УВІЙТИ</button>
               <button class="btn ghost" id="btnReset">Скинути дані</button>
             </div>
 
+            ${syncLoading ? `<div class="hint">Завантаження даних з хмари...</div>` : ``}
             <div class="hint">
               Демо-акаунти:<br/>
               <span class="mono">boss / 1234</span> (керівник)<br/>
@@ -4275,13 +4278,35 @@ async function pushSync(){
 async function pullSync(){
   if(!SYNC_URL || _syncInFlight) return;
   _syncInFlight = true;
+  const wasInitDone = _syncInitDone;
   try{
     const res = await fetch(SYNC_URL, {credentials: "include"});
-    if(!res.ok){ _syncInFlight = false; return; }
+    if(!res.ok){
+      _syncInFlight = false;
+      _syncInitDone = true;
+      if(!wasInitDone) render();
+      return;
+    }
     const data = await res.json();
-    if(!data || !data.state){ _syncInFlight = false; return; }
-    _syncReady = true;
+    if(!data || !data.state){
+      _syncInFlight = false;
+      _syncInitDone = true;
+      if(!wasInitDone) render();
+      return;
+    }
     const remote = migrateState(data.state) || data.state;
+    const isFirstSync = !_syncReady;
+    _syncReady = true;
+    _syncInitDone = true;
+    if(isFirstSync){
+      STATE = remote;
+      saveState(STATE, {skipSyncStamp:true});
+      _syncPending = false;
+      render();
+      _lastPullAt = nowIsoKyiv();
+      _syncInFlight = false;
+      return;
+    }
     const localStamp = stateStamp(STATE);
     const remoteStamp = stateStamp(remote);
     if(remoteStamp && (!localStamp || remoteStamp > localStamp)){
@@ -4294,6 +4319,10 @@ async function pullSync(){
     if(_syncPending) queueSync();
   } catch{}
   _syncInFlight = false;
+  if(!_syncInitDone){
+    _syncInitDone = true;
+    if(!wasInitDone) render();
+  }
 }
 function initAutoSync(){
   if(!SYNC_URL) return;
