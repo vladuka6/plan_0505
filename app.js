@@ -2228,6 +2228,26 @@ function viewTasks(){
     const hay = `${t.title} ${t.id} ${dept} ${resp}`.toLowerCase();
     return hay.includes(taskSearch);
   };
+  const highlightMatch = (text)=>{
+    const raw = String(text ?? "");
+    if(!taskSearch) return htmlesc(raw);
+    const needle = taskSearch;
+    const lower = raw.toLowerCase();
+    if(!needle || !lower.includes(needle)) return htmlesc(raw);
+    let out = "";
+    let i = 0;
+    while(true){
+      const idx = lower.indexOf(needle, i);
+      if(idx === -1){
+        out += htmlesc(raw.slice(i));
+        break;
+      }
+      out += htmlesc(raw.slice(i, idx));
+      out += `<mark class="search-hit">${htmlesc(raw.slice(idx, idx + needle.length))}</mark>`;
+      i = idx + needle.length;
+    }
+    return out;
+  };
 
   if(u.role === "boss"){
     if(deptFilter === "personal"){
@@ -2362,6 +2382,12 @@ function viewTasks(){
         : "task-title-type-personal";
 
     const numbering = `${idx + 1}.`;
+    const deptName = t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
+    const respName = getUserById(t.responsibleUserId)?.name || "—";
+    const titleHtml = highlightMatch(t.title || "");
+    const searchMeta = taskSearch
+      ? `<div class="task-search-meta">ID: <span class="mono">${highlightMatch(t.id)}</span> • ${highlightMatch(deptName)} • ${highlightMatch(respName)}</div>`
+      : "";
 
     const dueShort = t.dueDate ? dueDisplay(t.dueDate) : "—";
     const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
@@ -2391,9 +2417,10 @@ function viewTasks(){
           <div>
             <div class="task-line">
               <div class="task-title">
-                <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${htmlesc(t.title)}</div>
+                <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${titleHtml}</div>
                 ${descHtml}
                 ${resultHtml}
+                ${searchMeta}
                 ${blockerNote ? `<div class="task-note">⛔ ${blockerNote}</div>` : ``}
               </div>
               <div class="task-meta">
@@ -2434,6 +2461,7 @@ function viewTasks(){
     let counts = null;
     let groupHtml = [];
     let idx = 0;
+    const openAttr = taskSearch ? " open" : "";
     const countBucket = (t)=>{
       if(t.dueDate) return "due";
       if(["блокер","очікування"].includes(t.status)) return "blocker";
@@ -2459,9 +2487,9 @@ function viewTasks(){
         </span>
       `;
       groupHtml.push(`
-        <details class="dept-group dept-disclosure">
+        <details class="dept-group dept-disclosure"${openAttr}>
           <summary class="dept-title">
-            <span class="dept-title-text">${htmlesc(current)}</span>
+            <span class="dept-title-text">${highlightMatch(current)}</span>
             ${countsHtml}
           </summary>
           <div class="dept-list">${groupItems.join("")}${doneBlock}</div>

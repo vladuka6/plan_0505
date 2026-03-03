@@ -490,6 +490,24 @@
       text-overflow:ellipsis;
       max-width:520px;
     }
+    .task-search-meta{
+      font-size:12px;
+      color: var(--muted);
+      margin-top:4px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width:520px;
+    }
+    .search-hit{
+      background:#ffe08a;
+      color:inherit;
+      padding:0 2px;
+      border-radius:4px;
+    }
+    body.theme-dark .search-hit{
+      background:rgba(255,224,138,.25);
+    }
     .task-result{
       font-size:12px;
       color: var(--muted);
