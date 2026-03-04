@@ -581,6 +581,14 @@ function isBlockerReasonNote(note){
     || n.startsWith("статус → очікування:")
     || n.startsWith("статус -> очікування:");
 }
+function isStatusChangeNote(note){
+  if(!note) return false;
+  const n = String(note).trim().toLowerCase();
+  return n.startsWith("статус")
+    || n.startsWith("блокер:")
+    || n.startsWith("очікування:")
+    || n.startsWith("розблоковано");
+}
 function isOverdue(task){
   if(!task?.dueDate) return false;
   if(task.status === "закрито" || task.status === "скасовано") return false;
@@ -1952,6 +1960,19 @@ function openDeptAnalytics(deptId, periodKey="week"){
   const range = ranges[periodKey] || ranges.week;
 
   const tasks = STATE.tasks.filter(t=>t.departmentId===deptId);
+  const taskIds = new Set(tasks.map(t=>t.id));
+  const updatesInPeriod = STATE.taskUpdates
+    .filter(u=>taskIds.has(u.taskId))
+    .filter(u=>{
+      const d = toDateOnly(u.at);
+      return d && inRange(d, range.from, range.to);
+    })
+    .sort((a,b)=>b.at.localeCompare(a.at));
+  const updatesByTask = {};
+  updatesInPeriod.forEach(u=>{
+    if(!updatesByTask[u.taskId]) updatesByTask[u.taskId] = [];
+    updatesByTask[u.taskId].push(u);
+  });
   const activeNow = tasks.filter(t=>t.status!=="закрито" && t.status!=="скасовано");
   const closedInPeriod = tasks.filter(t=>{
     const closeDate = getCloseDateForTask(t);
@@ -1970,14 +1991,56 @@ function openDeptAnalytics(deptId, periodKey="week"){
   const onTimePct = pct(onTime, closedWithDue.length);
   const latePct = pct(late.length, closedWithDue.length);
 
+  const updateStats = tasks.map(t=>{
+    const list = updatesByTask[t.id] || [];
+    const last = list[0] || null;
+    const statusChanges = list.filter(u=>isStatusChangeNote(u.note)).length;
+    const editChanges = list.filter(u=>String(u.note||"").trim().toLowerCase().startsWith("змінено:")).length;
+    const blockerReasons = list.filter(u=>isBlockerReasonNote(u.note)).length;
+    return {task:t, total:list.length, statusChanges, editChanges, blockerReasons, last};
+  });
+  const totalUpdates = updatesInPeriod.length;
+  const totalStatusChanges = updateStats.reduce((s,x)=>s+x.statusChanges,0);
+  const totalEdits = updateStats.reduce((s,x)=>s+x.editChanges,0);
+  const totalBlockerReasons = updateStats.reduce((s,x)=>s+x.blockerReasons,0);
+
+  const topChanged = updateStats
+    .filter(x=>x.total>0)
+    .sort((a,b)=>b.total-a.total)
+    .slice(0,8);
+
   const listHtml = closedSorted.length
     ? closedSorted.map(t=>{
         const closeDate = getCloseDateForTask(t);
         const dueDate = t.dueDate ? splitDateTime(t.dueDate).date : "";
         const lateFlag = dueDate && closeDate && closeDate > dueDate;
-        return `• <b>${htmlesc(t.title)}</b> — ${fmtDate(closeDate)}${t.dueDate ? ` (дедлайн: ${fmtDate(dueDate)})` : ""}${lateFlag ? ` — <span class="badge b-danger">прострочено</span>` : ""}`;
-      }).join("<br/>")
+        const stats = updateStats.find(x=>x.task.id===t.id);
+        const lastNote = stats?.last?.note ? shorten(normalizeCloseNote(stats.last.note), 80) : "";
+        return `• <b>${htmlesc(t.title)}</b>${t.description ? ` — ${htmlesc(shorten(t.description, 60))}` : ""}<br/>` +
+               `<span class="mono">${fmtDate(closeDate)}</span>${t.dueDate ? ` (дедлайн: ${fmtDate(dueDate)})` : ""}${lateFlag ? ` — <span class="badge b-danger">прострочено</span>` : ""}<br/>` +
+               `<span class="hint">Оновлень: <b>${stats?.total || 0}</b>, зміни статусу: <b>${stats?.statusChanges || 0}</b>${lastNote ? ` • Останнє: ${htmlesc(lastNote)}` : ""}</span>`;
+      }).join("<br/><br/>")
     : "Немає виконаних задач за період.";
+
+  const changesHtml = topChanged.length
+    ? topChanged.map(x=>{
+        const lastNote = x.last?.note ? shorten(x.last.note, 80) : "";
+        return `• <b>${htmlesc(x.task.title)}</b> — оновлень: <b>${x.total}</b>, статусів: <b>${x.statusChanges}</b>, змін: <b>${x.editChanges}</b>${lastNote ? ` • останнє: ${htmlesc(lastNote)}` : ""}`;
+      }).join("<br/>")
+    : "Немає змін за період.";
+
+  const recentChanges = updatesInPeriod.slice(0,12).map(u=>{
+    const task = tasks.find(t=>t.id===u.taskId);
+    const who = getUserById(u.authorUserId)?.name || "—";
+    return `• <span class="mono">${u.at}</span> — <b>${htmlesc(task?.title || u.taskId)}</b> (${htmlesc(who)}): ${htmlesc(shorten(u.note || "", 90))}`;
+  }).join("<br/>") || "Немає оновлень за період.";
+
+  const conclusion = (()=> {
+    if(closedInPeriod.length === 0) return "Висновок: за період немає закритих задач — потрібна увага до завершення.";
+    if(closedWithDue.length && latePct >= 30) return "Висновок: високий відсоток прострочень — потрібен контроль дедлайнів.";
+    if(totalBlockerReasons > 0) return "Висновок: є повторювані блокери — перевірити причини і зняти ризики.";
+    return "Висновок: відділ працює стабільно, критичних сигналів не виявлено.";
+  })();
 
   const periodChips = `
     <div class="chips task-chips" style="margin-top:8px;">
@@ -2008,8 +2071,29 @@ function openDeptAnalytics(deptId, periodKey="week"){
     </div>
 
     <div class="item" style="cursor:default;">
+      <div class="row"><div class="name">Зміни / заходи</div><span class="badge b-violet mono">${totalUpdates}</span></div>
+      <div class="hint">
+        Оновлень за період: <b>${totalUpdates}</b><br/>
+        Зміни статусу: <b>${totalStatusChanges}</b><br/>
+        Редагування: <b>${totalEdits}</b><br/>
+        Причини блокера/очікування: <b>${totalBlockerReasons}</b>
+      </div>
+      <div class="hint" style="margin-top:6px;">${changesHtml}</div>
+    </div>
+
+    <div class="item" style="cursor:default;">
       <div class="name">Список виконаних</div>
       <div class="hint" style="margin-top:6px;">${listHtml}</div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Останні зміни</div>
+      <div class="hint" style="margin-top:6px;">${recentChanges}</div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Висновок</div>
+      <div class="hint" style="margin-top:6px;">${conclusion}</div>
     </div>
 
     <div class="sep"></div>
@@ -3067,6 +3151,7 @@ function markMeetingAnnounced(taskId){
   const today = kyivDateStr();
   const count = Number(t.meetingRepeatCount || 0) + 1;
   updateTask(taskId, {meetingRepeatCount: count, meetingLastDate: today}, u.id, `Озвучено: ${fmtDate(today)}`);
+  hideSheet();
   render();
   showToast("Озвучено", "ok");
 }
@@ -3075,6 +3160,7 @@ function openMeetingRepeat(taskId){
   const t = STATE.tasks.find(x=>x.id===taskId);
   if(!u || !t) return;
   if(u.role!=="boss" || !isAnnouncement(t) || t.audience!=="meeting") return;
+  hideSheet();
   const meta = meetingAnnouncementMeta(t);
   showSheet("Повторити оголошення", `
     <div class="hint">Оголошення: <b>${htmlesc(t.id)}</b></div>
@@ -3102,6 +3188,7 @@ function toggleMeetingHideToday(taskId){
   const hide = !isMeetingHiddenToday(t);
   const note = hide ? `Приховано сьогодні: ${fmtDate(today)}` : "Приховано сьогодні: скасовано";
   updateTask(taskId, {meetingSkipDate: hide ? today : null}, u.id, note);
+  hideSheet();
   render();
   showToast(hide ? "Приховано до завтра" : "Повернуто в список", "ok");
 }
