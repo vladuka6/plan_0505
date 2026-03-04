@@ -169,12 +169,26 @@
     }
     .chip-ico{display:none;font-size:14px;line-height:1;}
     .chip-text{display:inline;}
-    .task-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom: 5px;}
+    .task-toolbar{
+      display:grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap:10px;
+      align-items:start;
+      margin-bottom: 6px;
+    }
+    .task-filters{display:flex;flex-direction:column;gap:6px;min-width:0;}
+    .task-search{
+      min-width:220px;
+      max-width:420px;
+      width:clamp(220px, 28vw, 420px);
+      justify-self:end;
+    }
     .task-toolbar-sticky{position:relative;margin-bottom:8px;}
     .search-inline{margin-top:0;}
     .search-inline label{display:none;}
-    .search-inline input{width:clamp(154px, 18vw, 240px);max-width:100%;}
-    body.personal-announcements .search-inline input{width:clamp(140px, 16vw, 200px);}
+    .search-inline input{width:100%;max-width:100%;}
+    .task-count-hint{margin-top:2px;}
+    body.personal-announcements .search-inline input{width:100%;}
     body.scope-all .task-meta .token-dept{display:none;}
     body.scope-all .task-meta .token-user{display:none;}
     body.scope-all .task-item.has-due .task-meta .token-ctrl{display:none;}
@@ -733,7 +747,8 @@
       .titleblock .s{display:none;}
     }
     @media (max-width: 640px){
-      .task-toolbar{flex-direction:column;align-items:stretch;}
+      .task-toolbar{grid-template-columns:1fr;}
+      .task-search{width:100%;max-width:100%;min-width:0;justify-self:stretch;}
       .search-inline label{display:block;}
       .search-inline input{width:100%;max-width:100%;}
       .chip-ico{display:inline-flex;}

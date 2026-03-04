@@ -532,6 +532,16 @@ function normalizeBlockerNote(note){
     .replace(/^(Блокер|Очікування)\s*:\s*/i, "")
     .trim();
 }
+function isBlockerReasonNote(note){
+  if(!note) return false;
+  const n = String(note).trim().toLowerCase();
+  return n.startsWith("блокер:")
+    || n.startsWith("очікування:")
+    || n.startsWith("статус → блокер:")
+    || n.startsWith("статус -> блокер:")
+    || n.startsWith("статус → очікування:")
+    || n.startsWith("статус -> очікування:");
+}
 function isOverdue(task){
   if(!task?.dueDate) return false;
   if(task.status === "закрито" || task.status === "скасовано") return false;
@@ -821,8 +831,13 @@ function buildAnalyticsRows(){
     ? (closedDurations.reduce((s,x)=>s+x.daysToClose, 0) / closedDurations.length).toFixed(1)
     : "—";
   const topProblems = STATE.tasks
+    .filter(t=>t.status!=="закрито" && t.status!=="скасовано")
     .map(t=>{
-      const blockerUpdates = STATE.taskUpdates.filter(u=>u.taskId===t.id && (u.status==="блокер" || u.status==="очікування"));
+      const blockerUpdates = STATE.taskUpdates.filter(u=>
+        u.taskId===t.id
+        && (u.status==="блокер" || u.status==="очікування")
+        && isBlockerReasonNote(u.note)
+      );
       return {task:t, count:blockerUpdates.length, last:blockerUpdates.sort((a,b)=>b.at.localeCompare(a.at))[0]};
     })
     .filter(x=>x.count>0)
@@ -894,7 +909,7 @@ function buildAnalyticsRows(){
   rows.push(["Задача","Відділ","К-сть блокерів","Останнє"]);
   topProblems.forEach(x=>{
     const dept = x.task.departmentId ? getDeptById(x.task.departmentId)?.name : "Особисто";
-    const note = x.last?.note ? shorten(x.last.note, 80) : "";
+    const note = x.last?.note ? shorten(normalizeBlockerNote(x.last.note), 80) : "";
     rows.push([x.task.title, dept || "", x.count, note]);
   });
   rows.push([]);
@@ -965,8 +980,13 @@ function buildAnalyticsTableRows(){
     : "—";
 
   const topProblems = STATE.tasks
+    .filter(t=>t.status!=="закрито" && t.status!=="скасовано")
     .map(t=>{
-      const blockerUpdates = STATE.taskUpdates.filter(u=>u.taskId===t.id && (u.status==="блокер" || u.status==="очікування"));
+      const blockerUpdates = STATE.taskUpdates.filter(u=>
+        u.taskId===t.id
+        && (u.status==="блокер" || u.status==="очікування")
+        && isBlockerReasonNote(u.note)
+      );
       return {task:t, count:blockerUpdates.length};
     })
     .filter(x=>x.count>0)
@@ -2439,7 +2459,7 @@ function viewTasks(){
   const annDisplay = (filter==="активні") ? announcementsActive : announcementsFiltered;
   const shownCount = (showTasks ? filtered.length : 0) + (showAnns ? annDisplay.length : 0);
   const totalCount = (showTasks ? tasks.length : 0) + (showAnns ? announcements.length : 0);
-  const searchHint = `<div class="hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${totalCount}</span></div>`;
+  const searchHint = `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${totalCount}</span></div>`;
   const announcementBtn = (u.role==="boss" && showAnnouncementsScope)
     ? `<button class="btn ghost" data-action="openCreateAnnouncement">📣 Оголошення</button>`
     : ``;
@@ -2707,9 +2727,13 @@ function viewTasks(){
       <div class="card-b">
         <div class="task-toolbar-sticky">
           <div class="task-toolbar">
-            ${chips}
-            ${personalChips}
-            ${searchUi}
+            <div class="task-filters">
+              ${chips}
+              ${personalChips}
+            </div>
+            <div class="task-search">
+              ${searchUi}
+            </div>
           </div>
           ${deptChips}
           ${searchHint}
@@ -4306,7 +4330,7 @@ function viewAnalytics(){
               topProblems.length
                 ? topProblems.map(x=>{
                     const dept = x.task.departmentId ? getDeptById(x.task.departmentId)?.name : "Особисто";
-                    const note = x.last?.note ? ` — ${htmlesc(x.last.note).slice(0,80)}` : "";
+                    const note = x.last?.note ? ` — ${htmlesc(normalizeBlockerNote(x.last.note)).slice(0,80)}` : "";
                     return `• <b>${htmlesc(x.task.title)}</b> (${htmlesc(dept || "")}) • ${x.count}${note}`;
                   }).join("<br/>")
                 : "Немає активних блокерів."
@@ -4515,7 +4539,7 @@ function openHelp(){
       <div class="name">Аналітика: як читати</div>
       <div class="hint">
         Графік закриття: якщо падає 2–3 дні поспіль — відділ “застряг”.<br/>
-        Топ проблем: задачі, що найчастіше переходили в блокер/очікування.<br/>
+        Топ проблем: задачі з найчастішими причинами блокера/очікування.<br/>
         Середній час закриття: орієнтир швидкості виконання.<br/>
         Навантаження відділів: порівняння активних задач + блокерів/прострочених.
       </div>
