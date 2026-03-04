@@ -199,6 +199,30 @@ function addDays(dateStr, days){
   const dd = String(dt.getDate()).padStart(2,'0');
   return `${yy}-${mm}-${dd}`;
 }
+function startOfWeek(dateStr){
+  const [y,m,d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m-1, d);
+  const day = dt.getDay(); // 0 Sun .. 6 Sat
+  const diff = (day + 6) % 7; // Monday start
+  dt.setDate(dt.getDate() - diff);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth()+1).padStart(2,'0');
+  const dd = String(dt.getDate()).padStart(2,'0');
+  return `${yy}-${mm}-${dd}`;
+}
+function weekRangeFor(dateStr, offsetWeeks=0){
+  const start = startOfWeek(dateStr);
+  const from = addDays(start, -7*offsetWeeks);
+  const to = addDays(from, 6);
+  return {from, to};
+}
+function monthRangeFor(dateStr){
+  const [y,m] = dateStr.split("-").map(Number);
+  const from = `${y}-${String(m).padStart(2,'0')}-01`;
+  const dt = new Date(y, m, 0);
+  const to = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  return {from, to};
+}
 
 function seed(){
   const today = kyivDateStr();
@@ -516,6 +540,21 @@ function getCloseUpdate(task){
   if(upd) return upd;
   if(task.status==="закрито") return {at: task.updatedAt || "", note: ""};
   return null;
+}
+function getCloseDateForTask(task){
+  if(!task) return null;
+  const upd = STATE.taskUpdates
+    .filter(u=>u.taskId===task.id && u.status==="закрито")
+    .sort((a,b)=>b.at.localeCompare(a.at))[0];
+  if(upd) return toDateOnly(upd.at);
+  if(task.status==="закрито") return toDateOnly(task.updatedAt);
+  return null;
+}
+function isClosedLate(task, closeDate){
+  if(!task?.dueDate || !closeDate) return false;
+  const {date} = splitDateTime(task.dueDate);
+  if(!date) return false;
+  return closeDate > date;
 }
 function normalizeCloseNote(note){
   if(!note) return "";
@@ -1898,6 +1937,86 @@ function openDeptPeopleBoss(deptId, dateStr){
   `);
 }
 
+function openDeptAnalytics(deptId, periodKey="week"){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  const dept = getDeptById(deptId);
+  if(!dept) return;
+
+  const today = kyivDateStr();
+  const ranges = {
+    week: {...weekRangeFor(today, 0), label: "Цей тиждень"},
+    prev_week: {...weekRangeFor(today, 1), label: "Попередній тиждень"},
+    month: {...monthRangeFor(today), label: "Цей місяць"},
+  };
+  const range = ranges[periodKey] || ranges.week;
+
+  const tasks = STATE.tasks.filter(t=>t.departmentId===deptId);
+  const activeNow = tasks.filter(t=>t.status!=="закрито" && t.status!=="скасовано");
+  const closedInPeriod = tasks.filter(t=>{
+    const closeDate = getCloseDateForTask(t);
+    return closeDate && inRange(closeDate, range.from, range.to);
+  });
+  const closedSorted = closedInPeriod
+    .slice()
+    .sort((a,b)=>(getCloseDateForTask(b) || "").localeCompare(getCloseDateForTask(a) || ""));
+
+  const closedWithDue = closedInPeriod.filter(t=>!!t.dueDate);
+  const late = closedWithDue.filter(t=>isClosedLate(t, getCloseDateForTask(t)));
+  const onTime = closedWithDue.length - late.length;
+  const noDue = closedInPeriod.length - closedWithDue.length;
+
+  const pct = (n, d)=> d ? Math.round((n/d)*100) : 0;
+  const onTimePct = pct(onTime, closedWithDue.length);
+  const latePct = pct(late.length, closedWithDue.length);
+
+  const listHtml = closedSorted.length
+    ? closedSorted.map(t=>{
+        const closeDate = getCloseDateForTask(t);
+        const dueDate = t.dueDate ? splitDateTime(t.dueDate).date : "";
+        const lateFlag = dueDate && closeDate && closeDate > dueDate;
+        return `• <b>${htmlesc(t.title)}</b> — ${fmtDate(closeDate)}${t.dueDate ? ` (дедлайн: ${fmtDate(dueDate)})` : ""}${lateFlag ? ` — <span class="badge b-danger">прострочено</span>` : ""}`;
+      }).join("<br/>")
+    : "Немає виконаних задач за період.";
+
+  const periodChips = `
+    <div class="chips task-chips" style="margin-top:8px;">
+      <div class="chip ${periodKey==="week"?"active":""}" data-action="openDeptAnalytics" data-arg1="${deptId}" data-arg2="week">Цей тиждень</div>
+      <div class="chip ${periodKey==="prev_week"?"active":""}" data-action="openDeptAnalytics" data-arg1="${deptId}" data-arg2="prev_week">Попер. тиждень</div>
+      <div class="chip ${periodKey==="month"?"active":""}" data-action="openDeptAnalytics" data-arg1="${deptId}" data-arg2="month">Цей місяць</div>
+    </div>
+  `;
+
+  showSheet(`Звіт відділу — ${htmlesc(dept.name)}`, `
+    <div class="item" style="cursor:default;">
+      <div class="row">
+        <div class="name">${htmlesc(range.label)}</div>
+        <span class="pill mono">${fmtDate(range.from)} — ${fmtDate(range.to)}</span>
+      </div>
+      ${periodChips}
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="row"><div class="name">Підсумок</div><span class="badge b-blue mono">${closedInPeriod.length}</span></div>
+      <div class="hint">
+        Активні зараз: <b>${activeNow.length}</b><br/>
+        Закрито за період: <b>${closedInPeriod.length}</b><br/>
+        В строк: <b>${onTime}</b>${closedWithDue.length ? ` (${onTimePct}%)` : ""}<br/>
+        Прострочено: <b>${late.length}</b>${closedWithDue.length ? ` (${latePct}%)` : ""}<br/>
+        Без дедлайну: <b>${noDue}</b>
+      </div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Список виконаних</div>
+      <div class="hint" style="margin-top:6px;">${listHtml}</div>
+    </div>
+
+    <div class="sep"></div>
+    <button class="btn primary" data-action="hideSheet">Закрити</button>
+  `);
+}
+
 /* ===========================
    DEPT SUMMARY FORM
 =========================== */
@@ -2460,7 +2579,14 @@ function viewTasks(){
       ${STATE.departments.map(d=>{
         const c = getVisibleTasksForUser(u).filter(t=>t.departmentId===d.id && t.type!=="personal").length;
         const active = deptFilter===d.id ? "active" : "";
-        return `<div class="chip ${active}" data-action="setTaskDeptFilter" data-arg1="${d.id}">${deptBadgeHtml(d)} <span class="mono">${c}</span></div>`;
+        return `
+          <div class="chip ${active}" data-action="setTaskDeptFilter" data-arg1="${d.id}">
+            ${deptBadgeHtml(d)} <span class="mono">${c}</span>
+            <button class="dept-report-btn" data-action="openDeptAnalytics" data-arg1="${d.id}" data-arg2="week" title="Звіт відділу">
+              <span class="dr-ico">📊</span><span class="dr-full">Звіт</span>
+            </button>
+          </div>
+        `;
       }).join("")}
     </div>
   ` : ``;
@@ -4733,6 +4859,7 @@ const ACTIONS = {
   openDelegations,
   openDeptPeople,
   openDeptPeopleBoss,
+  openDeptAnalytics,
   openDeptSummary,
   openDeptSummaryForm,
   openControlByDept,

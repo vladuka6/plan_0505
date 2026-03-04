@@ -162,6 +162,24 @@
       background: rgba(255,255,255,.75);
       border-color: rgba(150,170,205,.4);
     }
+    .dept-report-btn{
+      margin-left:6px;
+      height:22px;
+      padding:0 6px;
+      border-radius:999px;
+      border:1px solid rgba(150,170,205,.45);
+      background: rgba(255,255,255,.85);
+      color: var(--muted);
+      font-size:11px;
+      font-weight:900;
+      display:inline-flex;
+      align-items:center;
+      gap:4px;
+      cursor:pointer;
+    }
+    .dept-report-btn:active{transform: scale(.98);}
+    .dept-report-btn .dr-full{display:inline;}
+    .dept-report-btn .dr-ico{display:inline;}
     .chips.task-chips .chip.active{
       background: linear-gradient(180deg, rgba(110,168,254,.25), rgba(110,168,254,.12));
       border-color: rgba(110,168,254,.55);
@@ -830,6 +848,7 @@
         background: rgba(255,248,225,.9);
         border-color: rgba(255,204,102,.55);
       }
+      .dept-report-btn .dr-full{display:none;}
     }
     @media (max-width: 640px){
       body.compact-tasks .task-line .name{
