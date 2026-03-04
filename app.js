@@ -672,6 +672,19 @@ function announcementAudienceLabel(a){
   if(a === "meeting") return "Нарада";
   return "Особовий склад";
 }
+function isMeetingHiddenToday(task){
+  if(!task || task.audience !== "meeting") return false;
+  return task.meetingSkipDate === kyivDateStr();
+}
+function meetingAnnouncementMeta(task){
+  if(!task || task.audience !== "meeting") return "";
+  const parts = [];
+  const count = Number(task.meetingRepeatCount || 0);
+  if(count > 0) parts.push(`Озвучено: ${count}`);
+  if(task.meetingLastDate) parts.push(`Останнє: ${fmtDateShort(task.meetingLastDate)}`);
+  if(task.meetingNextDate) parts.push(`Наступне: ${fmtDateShort(task.meetingNextDate)}`);
+  return parts.join(" • ");
+}
 function canSeeAnnouncement(u, t){
   if(!u || !isAnnouncement(t)) return false;
   if(u.role === "boss") return true;
@@ -1705,9 +1718,7 @@ function viewControl(){
           `}
         </div>
 
-        ${u.role!=="boss" ? `` : `
-          <div class="hint" style="margin-top:10px;">Порада: “Мої задачі” — дзвінки/нагадування/контроль без дедлайну. Став контрольну дату.</div>
-        `}
+        ${u.role!=="boss" ? `` : ``}
       </div>
     </div>
   `;
@@ -2515,6 +2526,8 @@ function viewTasks(){
     const searchMeta = taskSearch
       ? `<div class="task-search-meta">ID: <span class="mono">${highlightMatch(t.id)}</span> • ${highlightMatch(deptName)} • ${highlightMatch(respName)}${isAnn ? ` • ${highlightMatch(annLabel)}` : ""}</div>`
       : "";
+    const meetingMeta = (isAnn && t.audience==="meeting") ? meetingAnnouncementMeta(t) : "";
+    const meetingHtml = meetingMeta ? `<div class="ann-meta">🗣 ${htmlesc(meetingMeta)}</div>` : "";
 
     const dueShort = t.dueDate ? dueDisplay(t.dueDate) : "—";
     const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
@@ -2553,6 +2566,7 @@ function viewTasks(){
                 ${descHtml}
                 ${resultHtml}
                 ${searchMeta}
+                ${meetingHtml}
                 ${blockerNote ? `<div class="task-note">⛔ ${blockerNote}</div>` : ``}
               </div>
               <div class="task-meta">
@@ -2680,7 +2694,7 @@ function viewTasks(){
 
   const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
   const staffAnnouncements = annDisplay.filter(t=>t.audience !== "meeting");
-  const meetingAnnouncements = annDisplay.filter(t=>t.audience === "meeting");
+  const meetingAnnouncements = annDisplay.filter(t=>t.audience === "meeting" && !isMeetingHiddenToday(t));
   const staffClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience !== "meeting") : [];
   const meetingClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience === "meeting") : [];
   const renderAnnouncementDone = (list)=>(
@@ -2818,6 +2832,12 @@ function quickActionsForTask(u, t){
   if(isAnn){
     if(!isBoss) return "";
     const btns = [];
+    if(t.audience==="meeting"){
+      btns.push(`<button class="btn ok" data-action="markMeetingAnnounced" data-arg1="${t.id}">🗣 Озвучено сьогодні</button>`);
+      btns.push(`<button class="btn ghost" data-action="openMeetingRepeat" data-arg1="${t.id}">🔁 Повторити</button>`);
+      const hiddenToday = isMeetingHiddenToday(t);
+      btns.push(`<button class="btn ghost" data-action="toggleMeetingHideToday" data-arg1="${t.id}">${hiddenToday ? "👁 Повернути сьогодні" : "🙈 Сховати сьогодні"}</button>`);
+    }
     btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Виконано</button>`);
     if(canEditTask(u, t)){
       btns.push(`<button class="btn ghost" data-action="openEditTask" data-arg1="${t.id}">✏️ Редагувати</button>`);
@@ -2911,6 +2931,73 @@ function openEditAnnouncement(taskId){
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
     </div>
   `);
+}
+
+function markMeetingAnnounced(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(u.role!=="boss" || !isAnnouncement(t) || t.audience!=="meeting") return;
+  const today = kyivDateStr();
+  const count = Number(t.meetingRepeatCount || 0) + 1;
+  updateTask(taskId, {meetingRepeatCount: count, meetingLastDate: today}, u.id, `Озвучено: ${fmtDate(today)}`);
+  render();
+  showToast("Озвучено", "ok");
+}
+function openMeetingRepeat(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(u.role!=="boss" || !isAnnouncement(t) || t.audience!=="meeting") return;
+  const meta = meetingAnnouncementMeta(t);
+  showSheet("Повторити оголошення", `
+    <div class="hint">Оголошення: <b>${htmlesc(t.id)}</b></div>
+    ${meta ? `<div class="hint" style="margin-top:6px;">🗣 ${htmlesc(meta)}</div>` : ``}
+    <div class="field" style="margin-top:10px;">
+      <label>Наступне озвучення</label>
+      <input id="annRepeatDate" type="date" value="${htmlesc(t.meetingNextDate || "")}" />
+    </div>
+    <div class="actions" style="margin-top:10px;">
+      <button class="btn ghost btn-mini" data-action="setMeetingRepeatTomorrow">Завтра</button>
+      <label class="hint" style="margin-left:6px;"><input id="annRepeatClear" type="checkbox" /> Прибрати дату</label>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="applyMeetingRepeat" data-arg1="${t.id}">Зберегти</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function toggleMeetingHideToday(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(u.role!=="boss" || !isAnnouncement(t) || t.audience!=="meeting") return;
+  const today = kyivDateStr();
+  const hide = !isMeetingHiddenToday(t);
+  const note = hide ? `Приховано сьогодні: ${fmtDate(today)}` : "Приховано сьогодні: скасовано";
+  updateTask(taskId, {meetingSkipDate: hide ? today : null}, u.id, note);
+  render();
+  showToast(hide ? "Приховано до завтра" : "Повернуто в список", "ok");
+}
+function setMeetingRepeatTomorrow(){
+  const input = document.getElementById("annRepeatDate");
+  if(!input) return;
+  input.value = addDays(kyivDateStr(), 1);
+  const clear = document.getElementById("annRepeatClear");
+  if(clear) clear.checked = false;
+}
+function applyMeetingRepeat(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(u.role!=="boss" || !isAnnouncement(t) || t.audience!=="meeting") return;
+  const clear = !!document.getElementById("annRepeatClear")?.checked;
+  const nextDate = clear ? null : (document.getElementById("annRepeatDate")?.value || null);
+  const note = nextDate ? `Наступне озвучення: ${fmtDate(nextDate)}` : "Наступне озвучення: прибрано";
+  updateTask(taskId, {meetingNextDate: nextDate || null}, u.id, note);
+  hideSheet();
+  render();
+  showToast(nextDate ? "Дату збережено" : "Дату прибрано", "ok");
 }
 
 function appendReportText(id, text){
@@ -3178,6 +3265,7 @@ function openTask(taskId){
   const isAnn = isAnnouncement(t);
   const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
   const descLabel = isAnn ? "Текст" : "Опис";
+  const meetingMeta = (isAnn && t.audience==="meeting") ? meetingAnnouncementMeta(t) : "";
   const statusChip = {cls: statusBadgeClass(t.status), label: statusLabel(t.status), icon: statusIcon(t.status)};
   const hideStatus = isAnn || isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
   const closeUpd = isDone ? getCloseUpdate(t) : null;
@@ -3243,6 +3331,7 @@ function openTask(taskId){
         </div>
       </div>
 
+      ${meetingMeta ? `<div class="hint ann-meta">🗣 ${htmlesc(meetingMeta)}</div>` : ``}
       ${isAnn ? `` : `<div class="hint"><b>${descLabel}:</b> ${t.description ? htmlesc(t.description) : "—"}</div>`}
       ${(!isAnn && isDone) ? `<div class="hint"><b>Результат:</b>${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
 
@@ -4653,7 +4742,12 @@ const ACTIONS = {
   openTasksExportDialog,
   openTask,
   openEditTask,
+  openMeetingRepeat,
   openTaskList,
+  markMeetingAnnounced,
+  toggleMeetingHideToday,
+  setMeetingRepeatTomorrow,
+  applyMeetingRepeat,
   toggleTaskScope,
   clearTaskSearch,
   setControlDate,
