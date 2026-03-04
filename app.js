@@ -525,6 +525,13 @@ function normalizeCloseNote(note){
     .replace(/^Закрито:\s*/i, "")
     .trim();
 }
+function normalizeBlockerNote(note){
+  if(!note) return "";
+  return String(note)
+    .replace(/^Статус\s*→\s*(Блокер|Очікування)\s*:\s*/i, "")
+    .replace(/^(Блокер|Очікування)\s*:\s*/i, "")
+    .trim();
+}
 function isOverdue(task){
   if(!task?.dueDate) return false;
   if(task.status === "закрито" || task.status === "скасовано") return false;
@@ -1563,7 +1570,7 @@ function viewControl(){
           ${u.role==="boss" ? `
           <div class="stat" data-action="openControlByDept">
             <div class="l">
-              <div class="k">🎯 На контролі по відділах</div>
+              <div class="k">🎯 <span class="qa-full">На контролі по відділах</span><span class="qa-short">По відділам</span></div>
               <div class="d control-lines">
                 ${
                   (!controlByDeptDate.length && !controlByDeptAlways.length && !controlByDeptDeadline.length)
@@ -2468,8 +2475,10 @@ function viewTasks(){
     const cxHard = (cx === "складна");
     const ctrl = controlMeta(t);
     const dueHot = !!t.dueDate && cxHard;
-    const blocker = (t.status==="блокер" || t.status==="очікування") ? lastBlockerUpdate(t) : null;
-    const blockerNote = blocker?.note ? htmlesc(blocker.note).slice(0,120) : "";
+    const isBlocked = (t.status==="блокер" || t.status==="очікування");
+    const blocker = isBlocked ? lastBlockerUpdate(t) : null;
+    const blockerNoteRaw = blocker?.note ? normalizeBlockerNote(blocker.note) : "";
+    const blockerNote = blockerNoteRaw ? htmlesc(blockerNoteRaw).slice(0,120) : "";
     const isLate = isOverdue(t);
     const isDueTodayTask = isDueToday(t) && !isLate;
     const isDone = t.status==="закрито";
@@ -2486,7 +2495,7 @@ function viewTasks(){
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
     return `
-      <div class="item task-item ${isAnn ? "announcement-item" : ""} ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}">
+      <div class="item task-item ${isAnn ? "announcement-item" : ""} ${isBlocked ? "is-blocker" : ""} ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">
@@ -2627,13 +2636,16 @@ function viewTasks(){
       : ``
   );
   const renderAnnouncementSection = (title, list, closedList)=>`
-    <div class="announcement-section">
-      <div class="announcement-title">${title}</div>
+    <details class="announcement-section" open>
+      <summary class="announcement-title">
+        ${title}
+        <span class="ann-count mono">${list.length}</span>
+      </summary>
       <div class="announcement-list">
         ${list.length ? list.map(renderTaskItem).join("") : `<div class="hint">Немає оголошень.</div>`}
         ${renderAnnouncementDone(closedList)}
       </div>
-    </div>
+    </details>
   `;
   const announcementsBlock = showAnnouncementsScope ? `
     <div class="announcement-block">
@@ -2879,8 +2891,10 @@ function buildAutoReport(){
   Object.values(latestByTask).forEach(upd=>{
     const task = STATE.tasks.find(t=>t.id===upd.taskId);
     const label = task ? `${task.id} — ${task.title}` : `Задача ${upd.taskId}`;
-    const note = upd.note ? `: ${upd.note}` : "";
-    const line = `• ${label}${note}`;
+    const noteText = upd.note
+      ? ((upd.status==="блокер" || upd.status==="очікування") ? normalizeBlockerNote(upd.note) : upd.note)
+      : "";
+    const line = `• ${label}${noteText ? `: ${noteText}` : ""}`;
     if(upd.status==="закрито"){
       done.push(line);
     } else if(upd.status==="блокер" || upd.status==="очікування"){
