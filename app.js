@@ -1306,6 +1306,7 @@ let UI = {
   taskSearch: "",
   taskPersonalFilter: "all",
   taskIndexMap: {},
+  deptOpen: {},
   reportFilter: "сьогодні",
   reportsControlDate: null, // NEW
   theme: loadTheme(),
@@ -1559,7 +1560,25 @@ function viewControl(){
     summaryBadge = sum ? `<span class="badge b-ok">✅ Підсумок подано</span>` : `<span class="badge b-warn">🟡 Підсумку немає</span>`;
   }
 
+  const overview = `
+    <div class="desk-overview">
+      <div class="ov-item ov-warn" data-action="openTaskList" data-arg1="блокери">
+        <div class="k">⛔ Блокери / очікування</div>
+        <div class="v mono">${blockers.length}</div>
+      </div>
+      <div class="ov-item ov-danger" data-action="openTaskList" data-arg1="прострочені">
+        <div class="k">🟠 Прострочені</div>
+        <div class="v mono">${overdue.length}</div>
+      </div>
+      <div class="ov-item ov-violet" data-action="openTaskList" data-arg1="очікує_підтвердження">
+        <div class="k">🟣 Очікує підтвердження</div>
+        <div class="v mono">${requestClose.length}</div>
+      </div>
+    </div>
+  `;
+
   const body = `
+    ${overview}
     <div class="card">
       <div class="card-h">
         <div class="t">Контроль</div>
@@ -2540,11 +2559,17 @@ function viewTasks(){
 
   const renderGroupedList = (items)=>{
     let current = null;
+    let currentKey = null;
     let groupItems = [];
     let counts = null;
     let groupHtml = [];
     let idx = 0;
-    const openAttr = taskSearch ? " open" : "";
+    const openAttrFor = (key)=>{
+      const pref = UI.deptOpen ? UI.deptOpen[key] : undefined;
+      if(pref === true) return " open";
+      if(pref === false) return "";
+      return taskSearch ? " open" : "";
+    };
     const countBucket = (t)=>{
       if(t.dueDate) return "due";
       if(["блокер","очікування"].includes(t.status)) return "blocker";
@@ -2569,8 +2594,9 @@ function viewTasks(){
           ${countBadge("🎯", "Контроль постійно", counts.controlAlways, "count-always")}
         </span>
       `;
+      const openAttr = openAttrFor(currentKey || "");
       groupHtml.push(`
-        <details class="dept-group dept-disclosure"${openAttr}>
+        <details class="dept-group dept-disclosure"${openAttr} data-dept-key="${htmlesc(currentKey || "")}">
           <summary class="dept-title">
             <span class="dept-title-text">${highlightMatch(current)}</span>
             ${countsHtml}
@@ -2581,9 +2607,11 @@ function viewTasks(){
     };
     items.forEach(t=>{
       const label = deptLabel(t);
+      const key = t.departmentId || "personal";
       if(label !== current){
         flush();
         current = label;
+        currentKey = key;
         groupItems = [];
         counts = {due:0, blocker:0, controlDate:0, controlAlways:0};
         idx = 0;
@@ -2677,13 +2705,15 @@ function viewTasks(){
         </div>
       </div>
       <div class="card-b">
-        <div class="task-toolbar">
-          ${chips}
-          ${personalChips}
-          ${searchUi}
+        <div class="task-toolbar-sticky">
+          <div class="task-toolbar">
+            ${chips}
+            ${personalChips}
+            ${searchUi}
+          </div>
+          ${deptChips}
+          ${searchHint}
         </div>
-        ${deptChips}
-        ${searchHint}
         <div class="list">${list}</div>
       </div>
     </div>
@@ -2717,6 +2747,15 @@ function viewTasks(){
   };
 
   appShell({title:"Задачі", subtitle, bodyHtml: body, showFab:true, fabAction, tabs});
+
+  document.querySelectorAll(".dept-group.dept-disclosure").forEach((el)=>{
+    el.addEventListener("toggle", ()=>{
+      const key = el.getAttribute("data-dept-key") || "";
+      if(!key) return;
+      if(!UI.deptOpen) UI.deptOpen = {};
+      UI.deptOpen[key] = el.open;
+    });
+  });
 
   const fab = document.getElementById("fab");
   if(fab){
