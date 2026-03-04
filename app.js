@@ -1327,6 +1327,7 @@ let UI = {
   taskPersonalFilter: "all",
   taskIndexMap: {},
   deptOpen: {},
+  analyticsShowDetails: false,
   reportFilter: "сьогодні",
   reportsControlDate: null, // NEW
   theme: loadTheme(),
@@ -1335,6 +1336,10 @@ function toggleTheme(){
   UI.theme = UI.theme === "dark" ? "light" : "dark";
   safeSet(THEME_KEY, UI.theme);
   applyTheme(UI.theme);
+  render();
+}
+function toggleAnalyticsDetails(){
+  UI.analyticsShowDetails = !UI.analyticsShowDetails;
   render();
 }
 
@@ -1417,6 +1422,7 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
   document.body.classList.toggle("scope-all", scopeAll);
   document.body.classList.toggle("scope-dept", scopeDept);
   document.body.classList.toggle("personal-announcements", (UI.tab===ROUTES.TASKS && UI.taskPersonalFilter==="announcements"));
+  document.body.classList.toggle("analytics-details", (UI.tab===ROUTES.ANALYTICS && !!UI.analyticsShowDetails));
   if(showFab){
     document.getElementById("fab").addEventListener("click", fabAction);
   }
@@ -4230,8 +4236,13 @@ function viewAnalytics(){
     : "—";
 
   const topProblems = STATE.tasks
+    .filter(t=>t.status!=="закрито" && t.status!=="скасовано")
     .map(t=>{
-      const blockerUpdates = STATE.taskUpdates.filter(u=>u.taskId===t.id && (u.status==="блокер" || u.status==="очікування"));
+      const blockerUpdates = STATE.taskUpdates.filter(u=>
+        u.taskId===t.id
+        && (u.status==="блокер" || u.status==="очікування")
+        && isBlockerReasonNote(u.note)
+      );
       return {task:t, count:blockerUpdates.length, last:blockerUpdates.sort((a,b)=>b.at.localeCompare(a.at))[0]};
     })
     .filter(x=>x.count>0)
@@ -4299,13 +4310,66 @@ function viewAnalytics(){
   const cxClosedCtrlDate = complexityBreakdown(closedCtrlDate);
   const cxClosedCtrlAlways = complexityBreakdown(closedCtrlAlways);
 
+  const closedTotal = weekClosed.reduce((s,x)=>s+x.count,0);
+  const topProblemsShort = topProblems.length
+    ? topProblems.slice(0,3).map(x=>{
+        const dept = x.task.departmentId ? getDeptById(x.task.departmentId)?.name : "Особисто";
+        const note = x.last?.note ? normalizeBlockerNote(x.last.note) : "";
+        return `• ${htmlesc(x.task.title)} (${htmlesc(dept || "")}) • ${x.count}${note ? ` — ${htmlesc(shorten(note, 50))}` : ""}`;
+      }).join("<br/>")
+    : "Немає активних блокерів.";
+  const deptLoadTop = deptLoad.slice().sort((a,b)=>b.active-a.active).slice(0,3)
+    .map(x=>`• ${htmlesc(x.dept.name)} — ${x.active} (⛔ ${x.blockers}, 🟠 ${x.overdue})`).join("<br/>");
+  const complexitySummary = complexityCounts.map(x=>`${htmlesc(x.label)}: ${x.count}`).join(" • ");
+  const blockersTotal = deptLoad.reduce((s,x)=>s+x.blockers,0);
+  const overdueTotal = deptLoad.reduce((s,x)=>s+x.overdue,0);
+
+  const tiles = `
+    <div class="analytics-tiles">
+      <div class="tile">
+        <div class="tile-title">Закрито за 7 днів</div>
+        <div class="tile-value mono">${closedTotal}</div>
+        <div class="tile-sub">Середній час: <span class="mono">${avgClose}</span> дн.</div>
+      </div>
+      <div class="tile">
+        <div class="tile-title">Топ проблем (коротко)</div>
+        <div class="tile-list">${topProblemsShort}</div>
+      </div>
+      <div class="tile">
+        <div class="tile-title">Навантаження (топ‑3)</div>
+        <div class="tile-list">${deptLoadTop || "Немає даних."}</div>
+      </div>
+      <div class="tile">
+        <div class="tile-title">Контроль і дедлайни</div>
+        <div class="tile-value mono">⏱ ${activeDeadline.length}</div>
+        <div class="tile-sub">🗓 ${activeCtrlDate.length} • 🎯 ${activeCtrlAlways.length}</div>
+      </div>
+      <div class="tile">
+        <div class="tile-title">Складність активних</div>
+        <div class="tile-list">${complexitySummary || "Немає активних."}</div>
+      </div>
+      <div class="tile">
+        <div class="tile-title">Блокери / прострочені</div>
+        <div class="tile-value mono">⛔ ${blockersTotal}</div>
+        <div class="tile-sub">🟠 ${overdueTotal}</div>
+      </div>
+    </div>
+  `;
+
   const body = `
     <div class="card">
       <div class="card-h">
         <div class="t">Аналітика</div>
-        <span class="badge b-blue">Останні 7 днів</span>
+        <div class="card-actions">
+          <span class="badge b-blue">Останні 7 днів</span>
+          <button class="btn ghost btn-mini analytics-toggle" data-action="toggleAnalyticsDetails">
+            ${UI.analyticsShowDetails ? "Сховати деталі" : "Показати деталі"}
+          </button>
+        </div>
       </div>
-      <div class="card-b analytics-grid">
+      <div class="card-b">
+        ${tiles}
+        <div class="analytics-grid">
         <div class="item analytics-block" style="cursor:default;">
           <div class="row"><div class="name">Графік закриття задач</div><span class="badge b-ok mono">${weekClosed.reduce((s,x)=>s+x.count,0)}</span></div>
           <div class="hint">Скільки задач закрито по днях.</div>
@@ -4465,6 +4529,7 @@ function viewAnalytics(){
             `).join("")}
           </div>
         </div>
+        </div>
       </div>
     </div>
   `;
@@ -4607,6 +4672,7 @@ const ACTIONS = {
   submitStatusReason,
   exportTasksExcelNow,
   toggleTheme,
+  toggleAnalyticsDetails,
 };
 const CHANGE_ACTIONS = {
   refreshDelPeople,
