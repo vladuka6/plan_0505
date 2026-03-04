@@ -589,6 +589,12 @@ function isStatusChangeNote(note){
     || n.startsWith("очікування:")
     || n.startsWith("розблоковано");
 }
+function isDeadlineChangeNote(note){
+  if(!note) return false;
+  const n = String(note).trim().toLowerCase();
+  return (n.startsWith("змінено:") && n.includes("дедлайн"))
+    || (n.includes("дедлайн") && n.includes("→"));
+}
 function isOverdue(task){
   if(!task?.dueDate) return false;
   if(task.status === "закрито" || task.status === "скасовано") return false;
@@ -1961,6 +1967,14 @@ function openDeptAnalytics(deptId, periodKey="week"){
 
   const tasks = STATE.tasks.filter(t=>t.departmentId===deptId);
   const taskIds = new Set(tasks.map(t=>t.id));
+  const allUpdatesByTask = {};
+  STATE.taskUpdates
+    .filter(u=>taskIds.has(u.taskId))
+    .sort((a,b)=>b.at.localeCompare(a.at))
+    .forEach(u=>{
+      if(!allUpdatesByTask[u.taskId]) allUpdatesByTask[u.taskId] = [];
+      allUpdatesByTask[u.taskId].push(u);
+    });
   const updatesInPeriod = STATE.taskUpdates
     .filter(u=>taskIds.has(u.taskId))
     .filter(u=>{
@@ -1993,11 +2007,23 @@ function openDeptAnalytics(deptId, periodKey="week"){
 
   const updateStats = tasks.map(t=>{
     const list = updatesByTask[t.id] || [];
+    const allList = allUpdatesByTask[t.id] || [];
     const last = list[0] || null;
     const statusChanges = list.filter(u=>isStatusChangeNote(u.note)).length;
     const editChanges = list.filter(u=>String(u.note||"").trim().toLowerCase().startsWith("змінено:")).length;
     const blockerReasons = list.filter(u=>isBlockerReasonNote(u.note)).length;
-    return {task:t, total:list.length, statusChanges, editChanges, blockerReasons, last};
+    const deadlineChanges = list.filter(u=>isDeadlineChangeNote(u.note)).length;
+    return {
+      task:t,
+      total:list.length,
+      totalAll: allList.length,
+      statusChanges,
+      editChanges,
+      blockerReasons,
+      deadlineChanges,
+      last,
+      lastAll: allList[0] || null,
+    };
   });
   const totalUpdates = updatesInPeriod.length;
   const totalStatusChanges = updateStats.reduce((s,x)=>s+x.statusChanges,0);
@@ -2035,6 +2061,36 @@ function openDeptAnalytics(deptId, periodKey="week"){
     return `• <span class="mono">${u.at}</span> — <b>${htmlesc(task?.title || u.taskId)}</b> (${htmlesc(who)}): ${htmlesc(shorten(u.note || "", 90))}`;
   }).join("<br/>") || "Немає оновлень за період.";
 
+  const allTasksSorted = tasks.slice().sort((a,b)=>{
+    const aClosed = (a.status==="закрито" || a.status==="скасовано") ? 1 : 0;
+    const bClosed = (b.status==="закрито" || b.status==="скасовано") ? 1 : 0;
+    if(aClosed !== bClosed) return aClosed - bClosed;
+    const ad = dueSortKey(a.dueDate || "");
+    const bd = dueSortKey(b.dueDate || "");
+    return ad.localeCompare(bd);
+  });
+  const allTasksHtml = allTasksSorted.length
+    ? allTasksSorted.map(t=>{
+        const stats = updateStats.find(x=>x.task.id===t.id);
+        const closeDate = getCloseDateForTask(t);
+        const dueDate = t.dueDate ? splitDateTime(t.dueDate).date : "";
+        const lateFlag = dueDate && closeDate && closeDate > dueDate;
+        const overdueNow = isOverdue(t);
+        const flags = [];
+        if(stats?.deadlineChanges) flags.push(`дедлайн змінено ${stats.deadlineChanges}р`);
+        if(lateFlag) flags.push("прострочено");
+        if(overdueNow && t.status!=="закрито" && t.status!=="скасовано") flags.push("прострочено зараз");
+        const lastNote = stats?.last?.note ? shorten(stats.last.note, 80) : "";
+        const lastAllNote = (!lastNote && stats?.lastAll?.note) ? shorten(stats.lastAll.note, 80) : "";
+        const desc = t.description ? shorten(t.description, 80) : "—";
+        return `• <b>${htmlesc(t.title)}</b> — <span class="badge ${t.status==="закрито"?"b-ok":(t.status==="скасовано"?"":"b-blue")}">${htmlesc(statusLabel(t.status))}</span>` +
+               `${closeDate ? ` • ${fmtDate(closeDate)}` : ""}` +
+               `<br/><span class="hint">Дедлайн: <b>${dueDate ? fmtDate(dueDate) : "—"}</b>${flags.length ? ` • ${flags.join(" • ")}` : ""}</span>` +
+               `<br/><span class="hint">Опис: ${htmlesc(desc)}</span>` +
+               `<br/><span class="hint">Оновлень за період: <b>${stats?.total || 0}</b> • всього: <b>${stats?.totalAll || 0}</b>${lastNote ? ` • останнє: ${htmlesc(lastNote)}` : (lastAllNote ? ` • останнє: ${htmlesc(lastAllNote)}` : "")}</span>`;
+      }).join("<br/><br/>")
+    : "Немає задач у відділі.";
+
   const conclusion = (()=> {
     if(closedInPeriod.length === 0) return "Висновок: за період немає закритих задач — потрібна увага до завершення.";
     if(closedWithDue.length && latePct >= 30) return "Висновок: високий відсоток прострочень — потрібен контроль дедлайнів.";
@@ -2068,6 +2124,11 @@ function openDeptAnalytics(deptId, periodKey="week"){
         Прострочено: <b>${late.length}</b>${closedWithDue.length ? ` (${latePct}%)` : ""}<br/>
         Без дедлайну: <b>${noDue}</b>
       </div>
+    </div>
+
+    <div class="item" style="cursor:default;">
+      <div class="name">Усі задачі відділу (детально)</div>
+      <div class="hint" style="margin-top:6px;">${allTasksHtml}</div>
     </div>
 
     <div class="item" style="cursor:default;">
