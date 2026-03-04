@@ -2966,6 +2966,7 @@ function viewTasks(){
   const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
   const staffAnnouncements = annDisplay.filter(t=>t.audience !== "meeting");
   const meetingAnnouncements = annDisplay.filter(t=>t.audience === "meeting" && !isMeetingHiddenToday(t));
+  const meetingHiddenAnnouncements = annDisplay.filter(t=>t.audience === "meeting" && isMeetingHiddenToday(t));
   const staffClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience !== "meeting") : [];
   const meetingClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience === "meeting") : [];
   const renderAnnouncementDone = (list)=>(
@@ -2978,7 +2979,7 @@ function viewTasks(){
       `
       : ``
   );
-  const renderAnnouncementSection = (title, list, closedList)=>`
+  const renderAnnouncementSection = (title, list, closedList, extraHtml="")=>`
     <details class="announcement-section" open>
       <summary class="announcement-title">
         ${title}
@@ -2987,13 +2988,27 @@ function viewTasks(){
       <div class="announcement-list">
         ${list.length ? list.map(renderTaskItem).join("") : `<div class="hint">Немає оголошень.</div>`}
         ${renderAnnouncementDone(closedList)}
+        ${extraHtml}
       </div>
     </details>
   `;
+  const hiddenMeetingBlock = meetingHiddenAnnouncements.length
+    ? `
+      <details class="announcement-section announcement-hidden">
+        <summary class="announcement-title">
+          Приховані сьогодні
+          <span class="ann-count mono">${meetingHiddenAnnouncements.length}</span>
+        </summary>
+        <div class="announcement-list">
+          ${meetingHiddenAnnouncements.map(renderTaskItem).join("")}
+        </div>
+      </details>
+    `
+    : ``;
   const announcementsBlock = showAnnouncementsScope ? `
     <div class="announcement-block">
       ${renderAnnouncementSection("Оголошення для особового складу", staffAnnouncements, staffClosedAnnouncements)}
-      ${canSeeMeetingAnnouncements ? renderAnnouncementSection("Оголошення для наради", meetingAnnouncements, meetingClosedAnnouncements) : ``}
+      ${canSeeMeetingAnnouncements ? renderAnnouncementSection("Оголошення для наради", meetingAnnouncements, meetingClosedAnnouncements, hiddenMeetingBlock) : ``}
     </div>
   ` : "";
 
