@@ -176,6 +176,7 @@
       align-items:start;
       margin-bottom: 6px;
     }
+    .task-toolbar.no-search{grid-template-columns:1fr;}
     .task-filters{display:flex;flex-direction:column;gap:6px;min-width:0;}
     .task-search{
       min-width:220px;

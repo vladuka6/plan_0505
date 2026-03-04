@@ -2305,6 +2305,7 @@ function viewTasks(){
   const taskSearch = UI.taskSearch || "";
   const personalFilter = UI.taskPersonalFilter || "all";
   const showAnnouncementsScope = (u.role!=="boss") || (u.role==="boss" && deptFilter==="personal");
+  const isPersonalScope = (u.role==="boss" && deptFilter==="personal");
   const effectivePersonalFilter = showAnnouncementsScope ? personalFilter : "tasks";
   let announcements = showAnnouncementsScope ? getVisibleAnnouncementsForUser(u) : [];
   const deptLabel = (t)=> t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
@@ -2436,7 +2437,7 @@ function viewTasks(){
       <div class="chip ${personalFilter==="announcements"?"active":""}" data-action="setTaskPersonalFilter" data-arg1="announcements">Оголошення</div>
     </div>
   ` : ``;
-  const deptChips = (u.role==="boss") ? `
+  const deptChips = (u.role==="boss" && !isPersonalScope) ? `
     <div class="chips dept-chips task-chips">
       ${STATE.departments.map(d=>{
         const c = getVisibleTasksForUser(u).filter(t=>t.departmentId===d.id && t.type!=="personal").length;
@@ -2445,7 +2446,7 @@ function viewTasks(){
       }).join("")}
     </div>
   ` : ``;
-  const searchUi = `
+  const searchUi = isPersonalScope ? "" : `
     <div class="field search-inline">
       <label>Пошук задач / оголошень</label>
       <div class="row" style="gap:8px;">
@@ -2454,6 +2455,8 @@ function viewTasks(){
       </div>
     </div>
   `;
+  const searchBlock = searchUi ? `<div class="task-search">${searchUi}</div>` : ``;
+  const toolbarClass = searchUi ? "task-toolbar" : "task-toolbar no-search";
   const showTasks = effectivePersonalFilter!=="announcements";
   const showAnns = showAnnouncementsScope && effectivePersonalFilter!=="tasks";
   const annDisplay = (filter==="активні") ? announcementsActive : announcementsFiltered;
@@ -2726,14 +2729,12 @@ function viewTasks(){
       </div>
       <div class="card-b">
         <div class="task-toolbar-sticky">
-          <div class="task-toolbar">
+          <div class="${toolbarClass}">
             <div class="task-filters">
               ${chips}
               ${personalChips}
             </div>
-            <div class="task-search">
-              ${searchUi}
-            </div>
+            ${searchBlock}
           </div>
           ${deptChips}
           ${searchHint}
