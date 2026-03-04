@@ -2430,6 +2430,7 @@ function viewTasks(){
       <div class="chip ${filter==="закриті"?"active":""}" data-action="setTaskFilter" data-arg1="закриті"><span class="chip-ico">✅</span><span class="chip-text">Закриті</span></div>
     </div>
   `;
+  const statusChips = isPersonalScope ? "" : chips;
   const personalChips = showAnnouncementsScope ? `
     <div class="chips task-chips personal-chips">
       <div class="chip ${personalFilter==="all"?"active":""}" data-action="setTaskPersonalFilter" data-arg1="all">Все</div>
@@ -2731,7 +2732,7 @@ function viewTasks(){
         <div class="task-toolbar-sticky">
           <div class="${toolbarClass}">
             <div class="task-filters">
-              ${chips}
+              ${statusChips}
               ${personalChips}
             </div>
             ${searchBlock}
