@@ -4458,6 +4458,11 @@ function viewAnalytics(){
 function openTaskList(filterKey){
   UI.tab = ROUTES.TASKS;
   UI.taskFilter = filterKey;
+  if(UI.deptOpen){
+    UI.deptOpen = {};
+    STATE.departments.forEach(d=>{ UI.deptOpen[d.id] = true; });
+    UI.deptOpen.personal = true;
+  }
   render();
 }
 function openHelp(){
