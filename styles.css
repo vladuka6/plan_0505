@@ -188,6 +188,12 @@
     }
     .chip-ico{display:none;font-size:14px;line-height:1;}
     .chip-text{display:inline;}
+    .chips.task-chips .chip .chip-ico{display:inline-flex;}
+    .chips.task-chips .chip .chip-text{display:none;}
+    .chips.task-chips .chip:hover .chip-text,
+    .chips.task-chips .chip:focus-visible .chip-text{display:inline;}
+    .chips.task-chips .chip:hover .chip-ico,
+    .chips.task-chips .chip:focus-visible .chip-ico{display:none;}
     .task-toolbar{
       display:grid;
       grid-template-columns: minmax(0,1fr) auto;

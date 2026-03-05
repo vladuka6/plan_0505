@@ -2560,7 +2560,12 @@ function setTaskFilter(k){ UI.taskFilter = k; render(); }
 function setTaskDeptFilter(k){ UI.taskDeptFilter = k; render(); }
 function setTaskPersonalFilter(k){ UI.taskPersonalFilter = k; render(); }
 function toggleTaskScope(){
-  UI.taskDeptFilter = (UI.taskDeptFilter === "personal") ? "all" : "personal";
+  const next = (UI.taskDeptFilter === "personal") ? "all" : "personal";
+  UI.taskDeptFilter = next;
+  if(next === "personal"){
+    UI.taskFilter = "активні";
+    UI.taskPersonalFilter = "all";
+  }
   render();
 }
 function setTaskSearchFromInput(){
@@ -2722,13 +2727,12 @@ function viewTasks(){
   const deptChips = (u.role==="boss" && !isPersonalScope) ? `
     <div class="chips dept-chips task-chips">
       ${STATE.departments.map(d=>{
-        const c = getVisibleTasksForUser(u).filter(t=>t.departmentId===d.id && t.type!=="personal").length;
         const active = deptFilter===d.id ? "active" : "";
         return `
           <div class="chip ${active}" data-action="setTaskDeptFilter" data-arg1="${d.id}">
-            ${deptBadgeHtml(d)} <span class="mono">${c}</span>
+            ${deptBadgeHtml(d)}
             <button class="dept-report-btn" data-action="openDeptAnalytics" data-arg1="${d.id}" data-arg2="week" title="Звіт відділу">
-              <span class="dr-ico">📊</span><span class="dr-full">Звіт</span>
+              <span class="dr-ico">📊</span>
             </button>
           </div>
         `;
