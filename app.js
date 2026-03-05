@@ -2036,36 +2036,67 @@ function openDeptAnalytics(deptId, periodKey="week"){
   const totalEdits = updateStats.reduce((s,x)=>s+x.editChanges,0);
   const totalBlockerReasons = updateStats.reduce((s,x)=>s+x.blockerReasons,0);
 
+  const activeOverdue = activeNow.filter(t=>isOverdue(t)).length;
+  const activeBlockers = activeNow.filter(t=>["блокер","очікування"].includes(t.status)).length;
+  const staleActive = activeNow.filter(t=>staleTask(t,7)).length;
+
   const topChanged = updateStats
     .filter(x=>x.total>0)
     .sort((a,b)=>b.total-a.total)
     .slice(0,8);
 
   const listHtml = closedSorted.length
-    ? closedSorted.map(t=>{
+    ? `<ul class="report-list">` + closedSorted.map(t=>{
         const closeDate = getCloseDateForTask(t);
         const dueDate = t.dueDate ? splitDateTime(t.dueDate).date : "";
         const lateFlag = dueDate && closeDate && closeDate > dueDate;
         const stats = updateStats.find(x=>x.task.id===t.id);
         const lastNote = stats?.last?.note ? shorten(normalizeCloseNote(stats.last.note), 80) : "";
-        return `• <b>${htmlesc(t.title)}</b>${t.description ? ` — ${htmlesc(shorten(t.description, 60))}` : ""}<br/>` +
-               `<span class="mono">${fmtDate(closeDate)}</span>${t.dueDate ? ` (дедлайн: ${fmtDate(dueDate)})` : ""}${lateFlag ? ` — <span class="badge b-danger">прострочено</span>` : ""}<br/>` +
-               `<span class="hint">Оновлень: <b>${stats?.total || 0}</b>, зміни статусу: <b>${stats?.statusChanges || 0}</b>${lastNote ? ` • Останнє: ${htmlesc(lastNote)}` : ""}</span>`;
-      }).join("<br/><br/>")
-    : "Немає виконаних задач за період.";
+        const descShort = t.description ? shorten(t.description, 80) : "";
+        return `
+          <li>
+            <div class="report-line">
+              <span class="report-strong">${htmlesc(t.title)}</span>
+              ${lateFlag ? `<span class="badge b-danger">прострочено</span>` : (dueDate ? `<span class="badge b-ok">в строк</span>` : ``)}
+            </div>
+            <div class="report-meta">Закрито: <span class="mono">${fmtDate(closeDate)}</span>${dueDate ? ` • Дедлайн: <span class="mono">${fmtDate(dueDate)}</span>` : " • Без дедлайну"}</div>
+            ${descShort ? `<div class="report-meta">Опис: ${htmlesc(descShort)}</div>` : ``}
+            <div class="report-meta">Оновлень за період: <b>${stats?.total || 0}</b> • статусів: <b>${stats?.statusChanges || 0}</b>${lastNote ? ` • останнє: ${htmlesc(lastNote)}` : ""}</div>
+          </li>
+        `;
+      }).join("") + `</ul>`
+    : `<div class="hint">Немає виконаних задач за період.</div>`;
 
   const changesHtml = topChanged.length
-    ? topChanged.map(x=>{
+    ? `<ul class="report-list">` + topChanged.map(x=>{
         const lastNote = x.last?.note ? shorten(x.last.note, 80) : "";
-        return `• <b>${htmlesc(x.task.title)}</b> — оновлень: <b>${x.total}</b>, статусів: <b>${x.statusChanges}</b>, змін: <b>${x.editChanges}</b>${lastNote ? ` • останнє: ${htmlesc(lastNote)}` : ""}`;
-      }).join("<br/>")
-    : "Немає змін за період.";
+        return `
+          <li>
+            <div class="report-line">
+              <span class="report-strong">${htmlesc(x.task.title)}</span>
+            </div>
+            <div class="report-meta">Оновлень: <b>${x.total}</b> • статусів: <b>${x.statusChanges}</b> • змін: <b>${x.editChanges}</b>${lastNote ? ` • останнє: ${htmlesc(lastNote)}` : ""}</div>
+          </li>
+        `;
+      }).join("") + `</ul>`
+    : `<div class="hint">Немає змін за період.</div>`;
 
-  const recentChanges = updatesInPeriod.slice(0,12).map(u=>{
-    const task = tasks.find(t=>t.id===u.taskId);
-    const who = getUserById(u.authorUserId)?.name || "—";
-    return `• <span class="mono">${u.at}</span> — <b>${htmlesc(task?.title || u.taskId)}</b> (${htmlesc(who)}): ${htmlesc(shorten(u.note || "", 90))}`;
-  }).join("<br/>") || "Немає оновлень за період.";
+  const recentChanges = updatesInPeriod.length
+    ? `<ul class="report-list">` + updatesInPeriod.slice(0,12).map(u=>{
+        const task = tasks.find(t=>t.id===u.taskId);
+        const who = getUserById(u.authorUserId)?.name || "—";
+        return `
+          <li>
+            <div class="report-line">
+              <span class="mono">${htmlesc(u.at)}</span>
+              <span class="report-strong">${htmlesc(task?.title || u.taskId)}</span>
+              <span class="report-meta">(${htmlesc(who)})</span>
+            </div>
+            <div class="report-meta">${htmlesc(shorten(u.note || "", 120))}</div>
+          </li>
+        `;
+      }).join("") + `</ul>`
+    : `<div class="hint">Немає оновлень за період.</div>`;
 
   const allTasksSorted = tasks.slice().sort((a,b)=>{
     const aClosed = (a.status==="закрито" || a.status==="скасовано") ? 1 : 0;
@@ -2076,7 +2107,7 @@ function openDeptAnalytics(deptId, periodKey="week"){
     return ad.localeCompare(bd);
   });
   const allTasksHtml = allTasksSorted.length
-    ? allTasksSorted.map(t=>{
+    ? `<ul class="report-list">` + allTasksSorted.map(t=>{
         const stats = updateStats.find(x=>x.task.id===t.id);
         const closeDate = getCloseDateForTask(t);
         const dueDate = t.dueDate ? splitDateTime(t.dueDate).date : "";
@@ -2088,14 +2119,21 @@ function openDeptAnalytics(deptId, periodKey="week"){
         if(overdueNow && t.status!=="закрито" && t.status!=="скасовано") flags.push("прострочено зараз");
         const lastNote = stats?.last?.note ? shorten(stats.last.note, 80) : "";
         const lastAllNote = (!lastNote && stats?.lastAll?.note) ? shorten(stats.lastAll.note, 80) : "";
-        const desc = t.description ? shorten(t.description, 80) : "—";
-        return `• <b>${htmlesc(t.title)}</b> — <span class="badge ${t.status==="закрито"?"b-ok":(t.status==="скасовано"?"":"b-blue")}">${htmlesc(statusLabel(t.status))}</span>` +
-               `${closeDate ? ` • ${fmtDate(closeDate)}` : ""}` +
-               `<br/><span class="hint">Дедлайн: <b>${dueDate ? fmtDate(dueDate) : "—"}</b>${flags.length ? ` • ${flags.join(" • ")}` : ""}</span>` +
-               `<br/><span class="hint">Опис: ${htmlesc(desc)}</span>` +
-               `<br/><span class="hint">Оновлень за період: <b>${stats?.total || 0}</b> • всього: <b>${stats?.totalAll || 0}</b>${lastNote ? ` • останнє: ${htmlesc(lastNote)}` : (lastAllNote ? ` • останнє: ${htmlesc(lastAllNote)}` : "")}</span>`;
-      }).join("<br/><br/>")
-    : "Немає задач у відділі.";
+        const desc = t.description ? shorten(t.description, 80) : "";
+        return `
+          <li>
+            <div class="report-line">
+              <span class="report-strong">${htmlesc(t.title)}</span>
+              <span class="badge ${t.status==="закрито"?"b-ok":(t.status==="скасовано"?"":"b-blue")}">${htmlesc(statusLabel(t.status))}</span>
+              ${closeDate ? `<span class="mono">${fmtDate(closeDate)}</span>` : ``}
+            </div>
+            <div class="report-meta">Дедлайн: <b>${dueDate ? fmtDate(dueDate) : "—"}</b>${flags.length ? ` • ${flags.join(" • ")}` : ""}</div>
+            ${desc ? `<div class="report-meta">Опис: ${htmlesc(desc)}</div>` : ``}
+            <div class="report-meta">Оновлень за період: <b>${stats?.total || 0}</b> • всього: <b>${stats?.totalAll || 0}</b>${lastNote ? ` • останнє: ${htmlesc(lastNote)}` : (lastAllNote ? ` • останнє: ${htmlesc(lastAllNote)}` : "")}</div>
+          </li>
+        `;
+      }).join("") + `</ul>`
+    : `<div class="hint">Немає задач у відділі.</div>`;
 
   const conclusion = (()=> {
     if(closedInPeriod.length === 0) return "Висновок: за період немає закритих задач — потрібна увага до завершення.";
@@ -2113,7 +2151,7 @@ function openDeptAnalytics(deptId, periodKey="week"){
   `;
 
   showSheet(`Звіт відділу — ${htmlesc(dept.name)}`, `
-    <div class="item" style="cursor:default;">
+    <div class="item report-card" style="cursor:default;">
       <div class="row">
         <div class="name">${htmlesc(range.label)}</div>
         <span class="pill mono">${fmtDate(range.from)} — ${fmtDate(range.to)}</span>
@@ -2121,46 +2159,80 @@ function openDeptAnalytics(deptId, periodKey="week"){
       ${periodChips}
     </div>
 
-    <div class="item" style="cursor:default;">
-      <div class="row"><div class="name">Підсумок</div><span class="badge b-blue mono">${closedInPeriod.length}</span></div>
-      <div class="hint">
-        Активні зараз: <b>${activeNow.length}</b><br/>
-        Закрито за період: <b>${closedInPeriod.length}</b><br/>
-        В строк: <b>${onTime}</b>${closedWithDue.length ? ` (${onTimePct}%)` : ""}<br/>
-        Прострочено: <b>${late.length}</b>${closedWithDue.length ? ` (${latePct}%)` : ""}<br/>
-        Без дедлайну: <b>${noDue}</b>
+    <div class="report-section">
+      <div class="report-title">Коротко</div>
+      <div class="report-grid">
+        <div class="report-tile">
+          <div class="k">Активні зараз</div>
+          <div class="v">${activeNow.length}</div>
+          <div class="s">в роботі</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Закрито за період</div>
+          <div class="v">${closedInPeriod.length}</div>
+          <div class="s">${htmlesc(range.label.toLowerCase())}</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">В строк</div>
+          <div class="v">${onTime}</div>
+          <div class="s">${closedWithDue.length ? `${onTimePct}%` : "—"}</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Прострочено</div>
+          <div class="v">${late.length}</div>
+          <div class="s">${closedWithDue.length ? `${latePct}%` : "—"}</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Прострочені зараз</div>
+          <div class="v">${activeOverdue}</div>
+          <div class="s">активні</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Блокери зараз</div>
+          <div class="v">${activeBlockers}</div>
+          <div class="s">активні</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Без оновлень 7 днів</div>
+          <div class="v">${staleActive}</div>
+          <div class="s">активні</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Усього задач</div>
+          <div class="v">${tasks.length}</div>
+          <div class="s">у відділі</div>
+        </div>
       </div>
     </div>
 
-    <div class="item" style="cursor:default;">
-      <div class="name">Усі задачі відділу (детально)</div>
-      <div class="hint" style="margin-top:6px;">${allTasksHtml}</div>
+    <div class="report-section">
+      <div class="report-title">Виконані за період</div>
+      ${listHtml}
     </div>
 
-    <div class="item" style="cursor:default;">
-      <div class="row"><div class="name">Зміни / заходи</div><span class="badge b-violet mono">${totalUpdates}</span></div>
-      <div class="hint">
-        Оновлень за період: <b>${totalUpdates}</b><br/>
-        Зміни статусу: <b>${totalStatusChanges}</b><br/>
-        Редагування: <b>${totalEdits}</b><br/>
-        Причини блокера/очікування: <b>${totalBlockerReasons}</b>
-      </div>
-      <div class="hint" style="margin-top:6px;">${changesHtml}</div>
+    <div class="report-section">
+      <div class="report-title">Оновлення / активність</div>
+      <div class="report-meta">Оновлень за період: <b>${totalUpdates}</b> • зміни статусу: <b>${totalStatusChanges}</b> • редагування: <b>${totalEdits}</b> • причини блокера/очікування: <b>${totalBlockerReasons}</b></div>
+      <details class="report-details" ${topChanged.length ? "open" : ""}>
+        <summary>Найактивніші задачі</summary>
+        ${changesHtml}
+      </details>
+      <details class="report-details">
+        <summary>Останні зміни</summary>
+        ${recentChanges}
+      </details>
     </div>
 
-    <div class="item" style="cursor:default;">
-      <div class="name">Список виконаних</div>
-      <div class="hint" style="margin-top:6px;">${listHtml}</div>
+    <div class="report-section">
+      <details class="report-details">
+        <summary>Усі задачі відділу (детально)</summary>
+        ${allTasksHtml}
+      </details>
     </div>
 
-    <div class="item" style="cursor:default;">
-      <div class="name">Останні зміни</div>
-      <div class="hint" style="margin-top:6px;">${recentChanges}</div>
-    </div>
-
-    <div class="item" style="cursor:default;">
-      <div class="name">Висновок</div>
-      <div class="hint" style="margin-top:6px;">${conclusion}</div>
+    <div class="report-section">
+      <div class="report-title">Висновок</div>
+      <div class="report-meta">${conclusion}</div>
     </div>
 
     <div class="sep"></div>
