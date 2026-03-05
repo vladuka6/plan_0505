@@ -101,7 +101,7 @@
     }
     .b-danger{border-color: rgba(255,92,122,.35); color: #ffb3c0; background: rgba(255,92,122,.12);}
     .b-warn{border-color: rgba(255,204,102,.35); color: #ffe0a3; background: rgba(255,204,102,.12);}
-    .b-ok{border-color: rgba(69,230,154,.35); color: #b8ffdf; background: rgba(69,230,154,.12);}
+    .b-ok{border-color: rgba(69,230,154,.35); color: #111; background: rgba(69,230,154,.12);}
     .b-violet{border-color: rgba(183,131,255,.38); color: #e3d2ff; background: rgba(183,131,255,.12);}
     .b-blue{border-color: rgba(110,168,254,.35); color: #2d5fbd; background: rgba(110,168,254,.12);}
 
