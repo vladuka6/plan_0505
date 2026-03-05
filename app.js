@@ -2240,6 +2240,162 @@ function openDeptAnalytics(deptId, periodKey="week"){
   `);
 }
 
+function openAllDeptReport(periodKey="week"){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+
+  const today = kyivDateStr();
+  const ranges = {
+    week: {...weekRangeFor(today, 0), label: "Цей тиждень"},
+    prev_week: {...weekRangeFor(today, 1), label: "Попередній тиждень"},
+    month: {...monthRangeFor(today), label: "Цей місяць"},
+  };
+  const range = ranges[periodKey] || ranges.week;
+
+  const allTasks = STATE.tasks.slice();
+  const personalAll = allTasks.filter(t=>t.type==="personal" && !isAnnouncement(t));
+  const personalAnnouncements = allTasks.filter(t=>isAnnouncement(t));
+
+  const activeNow = (list)=>list.filter(t=>t.status!=="закрито" && t.status!=="скасовано");
+  const closedInPeriod = (list)=>list.filter(t=>{
+    const closeDate = getCloseDateForTask(t);
+    return closeDate && inRange(closeDate, range.from, range.to);
+  });
+  const countLate = (list)=>{
+    const closed = closedInPeriod(list).filter(t=>!!t.dueDate);
+    return closed.filter(t=>isClosedLate(t, getCloseDateForTask(t))).length;
+  };
+
+  const globalActive = activeNow(allTasks);
+  const globalClosed = closedInPeriod(allTasks);
+  const globalClosedWithDue = globalClosed.filter(t=>!!t.dueDate);
+  const globalLate = globalClosedWithDue.filter(t=>isClosedLate(t, getCloseDateForTask(t)));
+  const globalOnTime = globalClosedWithDue.length - globalLate.length;
+  const globalOverdue = globalActive.filter(t=>isOverdue(t)).length;
+  const globalBlockers = globalActive.filter(t=>["блокер","очікування"].includes(t.status)).length;
+  const globalStale = globalActive.filter(t=>staleTask(t,7)).length;
+
+  const pct = (n, d)=> d ? Math.round((n/d)*100) : 0;
+
+  const deptRows = STATE.departments.map(d=>{
+    const list = allTasks.filter(t=>t.departmentId===d.id);
+    const active = activeNow(list);
+    const closed = closedInPeriod(list);
+    const closedWithDue = closed.filter(t=>!!t.dueDate);
+    const late = closedWithDue.filter(t=>isClosedLate(t, getCloseDateForTask(t))).length;
+    const onTime = closedWithDue.length - late;
+    const overdue = active.filter(t=>isOverdue(t)).length;
+    const blockers = active.filter(t=>["блокер","очікування"].includes(t.status)).length;
+    return {dept:d, active: active.length, blockers, overdue, closed: closed.length, onTime, late, closedWithDue: closedWithDue.length};
+  });
+
+  const personalActive = activeNow(personalAll);
+  const personalClosed = closedInPeriod(personalAll);
+  const personalOverdue = personalActive.filter(t=>isOverdue(t)).length;
+  const personalBlockers = personalActive.filter(t=>["блокер","очікування"].includes(t.status)).length;
+
+  const annActive = activeNow(personalAnnouncements);
+  const annClosed = closedInPeriod(personalAnnouncements);
+
+  const periodChips = `
+    <div class="chips task-chips" style="margin-top:8px;">
+      <div class="chip ${periodKey==="week"?"active":""}" data-action="openAllDeptReport" data-arg1="week">Цей тиждень</div>
+      <div class="chip ${periodKey==="prev_week"?"active":""}" data-action="openAllDeptReport" data-arg1="prev_week">Попер. тиждень</div>
+      <div class="chip ${periodKey==="month"?"active":""}" data-action="openAllDeptReport" data-arg1="month">Цей місяць</div>
+    </div>
+  `;
+
+  const deptListHtml = deptRows.length
+    ? `<ul class="report-list">` + deptRows.map(r=>`
+        <li>
+          <div class="report-line">
+            <span class="report-strong">${htmlesc(r.dept.name)}</span>
+            <span class="badge b-blue">Активні ${r.active}</span>
+            <span class="badge b-warn">Блокери ${r.blockers}</span>
+            <span class="badge b-danger">Прострочені ${r.overdue}</span>
+            <span class="badge b-ok">Закрито ${r.closed}</span>
+          </div>
+          <div class="report-meta">В строк: <b>${r.onTime}</b>${r.closedWithDue ? ` (${pct(r.onTime, r.closedWithDue)}%)` : ""} • Прострочено при закритті: <b>${r.late}</b>${r.closedWithDue ? ` (${pct(r.late, r.closedWithDue)}%)` : ""}</div>
+        </li>
+      `).join("") + `</ul>`
+    : `<div class="hint">Немає даних по відділах.</div>`;
+
+  showSheet("Звіт по всім відділам", `
+    <div class="item report-card" style="cursor:default;">
+      <div class="row">
+        <div class="name">${htmlesc(range.label)}</div>
+        <span class="pill mono">${fmtDate(range.from)} — ${fmtDate(range.to)}</span>
+      </div>
+      ${periodChips}
+    </div>
+
+    <div class="report-section">
+      <div class="report-title">Загальна аналітика</div>
+      <div class="report-grid">
+        <div class="report-tile">
+          <div class="k">Активні зараз</div>
+          <div class="v">${globalActive.length}</div>
+          <div class="s">усі відділи</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Закрито за період</div>
+          <div class="v">${globalClosed.length}</div>
+          <div class="s">${htmlesc(range.label.toLowerCase())}</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">В строк</div>
+          <div class="v">${globalOnTime}</div>
+          <div class="s">${globalClosedWithDue.length ? `${pct(globalOnTime, globalClosedWithDue.length)}%` : "—"}</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Прострочено при закритті</div>
+          <div class="v">${globalLate.length}</div>
+          <div class="s">${globalClosedWithDue.length ? `${pct(globalLate.length, globalClosedWithDue.length)}%` : "—"}</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Прострочені зараз</div>
+          <div class="v">${globalOverdue}</div>
+          <div class="s">активні</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Блокери зараз</div>
+          <div class="v">${globalBlockers}</div>
+          <div class="s">активні</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Без оновлень 7 днів</div>
+          <div class="v">${globalStale}</div>
+          <div class="s">активні</div>
+        </div>
+        <div class="report-tile">
+          <div class="k">Усього задач</div>
+          <div class="v">${allTasks.length}</div>
+          <div class="s">в системі</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="report-section">
+      <div class="report-title">Відділи</div>
+      ${deptListHtml}
+    </div>
+
+    <div class="report-section">
+      <div class="report-title">Мої особисті задачі</div>
+      <div class="report-line">
+        <span class="badge b-blue">Активні ${personalActive.length}</span>
+        <span class="badge b-warn">Блокери ${personalBlockers}</span>
+        <span class="badge b-danger">Прострочені ${personalOverdue}</span>
+        <span class="badge b-ok">Закрито ${personalClosed.length}</span>
+      </div>
+      <div class="report-meta">Оголошення: активні <b>${annActive.length}</b> • закриті за період <b>${annClosed.length}</b></div>
+    </div>
+
+    <div class="sep"></div>
+    <button class="btn primary" data-action="hideSheet">Закрити</button>
+  `);
+}
+
 /* ===========================
    DEPT SUMMARY FORM
 =========================== */
@@ -2824,6 +2980,7 @@ function viewTasks(){
       <div class="chip ${filter==="блокери"?"active":""}" data-action="setTaskFilter" data-arg1="блокери"><span class="chip-ico">⛔</span><span class="chip-text">Блокери</span></div>
       <div class="chip ${filter==="без_оновлень"?"active":""}" data-action="setTaskFilter" data-arg1="без_оновлень"><span class="chip-ico">⏳</span><span class="chip-text">Без оновлень</span></div>
       <div class="chip ${filter==="закриті"?"active":""}" data-action="setTaskFilter" data-arg1="закриті"><span class="chip-ico">✅</span><span class="chip-text">Закриті</span></div>
+      ${u.role==="boss" ? `<div class="chip" data-action="openAllDeptReport" data-arg1="week" title="Звіт по всім відділам"><span class="chip-ico">📊</span><span class="chip-text">Звіт</span></div>` : ``}
     </div>
   `;
   const statusChips = isPersonalScope ? "" : chips;
@@ -5149,6 +5306,7 @@ const ACTIONS = {
   openDeptPeople,
   openDeptPeopleBoss,
   openDeptAnalytics,
+  openAllDeptReport,
   openDeptSummary,
   openDeptSummaryForm,
   openControlByDept,
