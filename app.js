@@ -359,6 +359,12 @@ function canEditTask(u, t){
   if(t.type==="personal" || t.type==="managerial") return false;
   return t.departmentId === u.departmentId;
 }
+function canDeleteTask(u, t){
+  if(!u || !t) return false;
+  if(u.role==="boss") return true;
+  if(isAnnouncement(t)) return false;
+  return canEditTask(u, t);
+}
 function shorten(s, max=70){
   s = (s || "").trim();
   if(!s) return "—";
@@ -2577,6 +2583,38 @@ function clearTaskSearch(){
   UI.taskSearch = "";
   render();
 }
+function confirmDeleteTask(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(!canDeleteTask(u, t)){
+    showSheet("Немає прав", `<div class="hint">Ви не маєте прав видаляти цю задачу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const isAnn = isAnnouncement(t);
+  showSheet(isAnn ? "Видалити оголошення" : "Видалити задачу", `
+    <div class="hint">Видалити "${htmlesc(t.title)}"? Це також прибере всі оновлення по задачі.</div>
+    <div class="actions">
+      <button class="btn danger" data-action="deleteTaskNow" data-arg1="${t.id}">🗑 Видалити</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function deleteTaskNow(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(!canDeleteTask(u, t)){
+    showSheet("Немає прав", `<div class="hint">Ви не маєте прав видаляти цю задачу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  STATE.tasks = STATE.tasks.filter(x=>x.id!==taskId);
+  STATE.taskUpdates = STATE.taskUpdates.filter(x=>x.taskId!==taskId);
+  saveState(STATE);
+  hideSheet();
+  render();
+  showToast("Видалено", "ok");
+}
 
 function viewTasks(){
   if(!ensureLoggedIn()) return viewLogin();
@@ -2831,6 +2869,10 @@ function viewTasks(){
     const resultHtml = (!isAnn && isDone) ? `<div class="task-result">Результат:${closeNote ? htmlesc(closeNote) : "—"}</div>` : "";
 
     const ctrlClass = t.controlAlways ? "ctrl-always" : (t.nextControlDate ? "ctrl-date" : "");
+    const canDelete = canDeleteTask(u, t);
+    const deleteBtn = canDelete
+      ? `<button class="task-del-btn" type="button" data-action="confirmDeleteTask" data-arg1="${t.id}" title="Видалити">🗑</button>`
+      : "";
     return `
       <div class="item task-item ${isAnn ? "announcement-item" : ""} ${isBlocked ? "is-blocker" : ""} ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}">
         <div class="row" data-action="openTask" data-arg1="${t.id}">
@@ -2857,6 +2899,7 @@ function viewTasks(){
                     )
                 }
                 ${isAnn ? `` : `<span class="task-token token-complexity ${cxHard ? "complexity-hard" : ""} compact-hide" title="Складність"><span class="token-ico">${cxIcon}</span><span class="token-text">${htmlesc(cxLabel)}</span></span>`}
+                ${deleteBtn}
               </div>
             </div>
           </div>
@@ -3116,7 +3159,12 @@ function quickActionsForTask(u, t){
   const {isDeptHeadLike} = asDeptRole(u);
   const isBoss = (u.role==="boss");
   const canUpdate = isBoss || isDeptHeadLike;
-  if(!canUpdate || t.status==="закрито") return "";
+  const canDelete = canDeleteTask(u, t);
+  if(!canUpdate || t.status==="закрито"){
+    return canDelete
+      ? `<div class="actions"><button class="btn danger" data-action="confirmDeleteTask" data-arg1="${t.id}">🗑 Видалити</button></div>`
+      : "";
+  }
 
   const isAnn = isAnnouncement(t);
   if(isAnn){
@@ -3132,6 +3180,7 @@ function quickActionsForTask(u, t){
     if(canEditTask(u, t)){
       btns.push(`<button class="btn ghost" data-action="openEditTask" data-arg1="${t.id}">✏️ Редагувати</button>`);
     }
+    if(canDelete) btns.push(`<button class="btn danger" data-action="confirmDeleteTask" data-arg1="${t.id}">🗑 Видалити</button>`);
     return `<div class="actions">${btns.join("")}</div>`;
   }
 
@@ -3161,6 +3210,7 @@ function quickActionsForTask(u, t){
   if(canEditTask(u, t)){
     btns.push(`<button class="btn ghost" data-action="openEditTask" data-arg1="${t.id}">✏️ Редагувати</button>`);
   }
+  if(canDelete) btns.push(`<button class="btn danger" data-action="confirmDeleteTask" data-arg1="${t.id}">🗑 Видалити</button>`);
   return `<div class="actions">${btns.join("")}</div>`;
 }
 
@@ -5044,6 +5094,8 @@ const ACTIONS = {
   applyMeetingRepeat,
   toggleTaskScope,
   clearTaskSearch,
+  confirmDeleteTask,
+  deleteTaskNow,
   setControlDate,
   applyReportTemplate,
   autoFillReport,
