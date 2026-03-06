@@ -3033,18 +3033,14 @@ function viewWeeklyTasks(){
   const diffLabel = (diff > 0 ? `+${diff}` : String(diff));
   const renderList = (list, emptyText)=>{
     if(!list.length) return `<div class="hint">${emptyText}</div>`;
-    return list.map(t=>{
+    return list.map((t, idx)=>{
       const desc = (t.description || "").trim();
       return `
         <div class="item" style="cursor:default;">
           <div class="row">
             <div>
-              <div class="name">${htmlesc(t.title)}</div>
+              <div class="name"><span class="mono">${idx + 1}.</span> ${htmlesc(t.title)}</div>
               ${desc ? `<div class="hint" style="margin-top:8px;">${htmlesc(desc)}</div>` : ``}
-              <div class="sub" style="margin-top:6px;">
-                <span class="pill mono">${fmtDate(t.weekStart)} — ${fmtDate(t.weekEnd)}</span>
-                ${t.updatedAt ? `<span class="pill mono">${htmlesc(t.updatedAt.slice(11,16))}</span>` : ``}
-              </div>
             </div>
             ${u.readOnly ? `` : `<button class="btn ghost" data-action="openWeeklyTaskEdit" data-arg1="${t.id}">✏️</button>`}
           </div>
