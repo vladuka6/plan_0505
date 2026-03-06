@@ -111,8 +111,16 @@ function migrateState(st){
     taskUpdates: Array.isArray(st.taskUpdates) ? st.taskUpdates : [],
     dailyReports: Array.isArray(st.dailyReports) ? st.dailyReports : [],
     deptSummaries: Array.isArray(st.deptSummaries) ? st.deptSummaries : [],
+    weeklyTasks: Array.isArray(st.weeklyTasks) ? st.weeklyTasks : [],
     sync: (st.sync && typeof st.sync === "object") ? st.sync : null,
   };
+  if(Array.isArray(next.users)){
+    const hasViewer = next.users.some(u=>u && u.login==="viewer");
+    if(!hasViewer){
+      next.users.push({id:"u_viewer", login:"viewer", pass:"view", name:"Перегляд", role:"boss", departmentId:null, active:true, readOnly:true});
+    }
+  }
+
 
   if(next.version < 4){
     next.version = 4;
@@ -240,6 +248,7 @@ function seed(){
     ],
     users: [
       {id:"u_boss", login:"boss", pass:"1234", name:"Керівник", role:"boss", departmentId:null, active:true},
+      {id:"u_viewer", login:"viewer", pass:"view", name:"Перегляд", role:"boss", departmentId:null, active:true, readOnly:true},
       {id:"u_h2", login:"head2", pass:"1234", name:"Начальник Відділу №2", role:"dept_head", departmentId:"d2", active:true},
       {id:"u_h5", login:"head5", pass:"1234", name:"Начальник Відділу №5", role:"dept_head", departmentId:"d5", active:true},
       {id:"u_e21", login:"e21", pass:"1234", name:"Виконавець 2-1", role:"executor", departmentId:"d2", active:true},
@@ -251,7 +260,8 @@ function seed(){
     tasks: [],
     taskUpdates: [],
     dailyReports: [],
-    deptSummaries: []
+    deptSummaries: [],
+    weeklyTasks: [],
   };
   saveState(st);
   return st;
@@ -353,7 +363,7 @@ function getDeptResponsibleOptions(deptId){
 }
 function canEditTask(u, t){
   if(!u || !t) return false;
-  if(u.role==="boss") return true;
+  if(u.role==="boss") return !u.readOnly;
   const {isDeptHeadLike} = asDeptRole(u);
   if(!isDeptHeadLike) return false;
   if(t.type==="personal" || t.type==="managerial") return false;
@@ -361,7 +371,7 @@ function canEditTask(u, t){
 }
 function canDeleteTask(u, t){
   if(!u || !t) return false;
-  if(u.role==="boss") return true;
+  if(u.role==="boss") return !u.readOnly;
   if(isAnnouncement(t)) return false;
   return canEditTask(u, t);
 }
@@ -430,6 +440,25 @@ function actingBannerForUser(u){
 /* ===========================
    PERMISSIONS
 =========================== */
+function isReadOnly(u){
+  return !!u && !!u.readOnly;
+}
+function canWrite(u){
+  return !!u && !u.readOnly;
+}
+function roleSubtitle(u){
+  if(!u) return "";
+  if(u.readOnly) return "Перегляд";
+  if(u.role==="boss") return "Керівник";
+  return getDeptById(u.departmentId)?.name ?? "Відділ";
+}
+function roleLabel(u){
+  if(!u) return "";
+  if(u.readOnly) return "Перегляд";
+  if(u.role==="boss") return "Керівник";
+  const {isDeptHeadLike} = asDeptRole(u);
+  return isDeptHeadLike ? "Начальник відділу / в.о." : "Виконавець";
+}
 function canAccessDept(u, deptId){
   if(!u) return false;
   if(u.role==="boss") return true;
@@ -646,7 +675,10 @@ function dateDiffDays(a,b){
 }
 function getVisibleTasksForUser(u){
   if(!u) return [];
-  if(u.role==="boss") return STATE.tasks.filter(t=>!isAnnouncement(t));
+  if(u.role==="boss"){
+    if(u.readOnly) return STATE.tasks.filter(t=>!isAnnouncement(t) && t.type!=="personal");
+    return STATE.tasks.filter(t=>!isAnnouncement(t));
+  }
   return STATE.tasks.filter(t=>!isAnnouncement(t) && t.departmentId===u.departmentId);
 }
 function updateTask(taskId, patch, authorId, note){
@@ -746,7 +778,7 @@ function meetingAnnouncementMeta(task){
 }
 function canSeeAnnouncement(u, t){
   if(!u || !isAnnouncement(t)) return false;
-  if(u.role === "boss") return true;
+  if(u.role === "boss") return !(u.readOnly && t.audience === "staff");
   if(t.audience === "staff") return true;
   if(t.audience === "meeting"){
     const {isDeptHeadLike} = asDeptRole(u);
@@ -1225,7 +1257,7 @@ function exportTasksExcelNow(){
     ...STATE.departments.map(d=>({name: d.name, id: d.id})),
     {name: "Особисті", id: "personal"}
   ];
-  const announcementsAll = STATE.tasks.filter(isAnnouncement).filter(t=>taskInPeriod(t, from, to));
+  const announcementsAll = getVisibleAnnouncementsForUser(currentSessionUser()).filter(t=>taskInPeriod(t, from, to));
   const staffAnnouncements = announcementsAll.filter(t=>t.audience !== "meeting");
   const meetingAnnouncements = announcementsAll.filter(t=>t.audience === "meeting");
   const canUseXlsx = typeof XLSX !== "undefined" && XLSX.utils && XLSX.writeFile;
@@ -1380,6 +1412,7 @@ const ROUTES = {
   REPORTS: "reports",
   TASKS: "tasks",
   ANALYTICS: "analytics",
+  WEEKLY: "weekly",
   PROFILE: "profile",
 };
 function loadTheme(){
@@ -1556,7 +1589,7 @@ function viewLogin(){
           <div class="card-b">
             <div class="field">
               <label>Логін</label>
-              <input id="login" placeholder="boss / head2 / head5 / e21..." autocomplete="username" ${syncLoading ? "disabled" : ""} />
+              <input id="login" placeholder="boss / viewer / head2 / head5 / e21..." autocomplete="username" ${syncLoading ? "disabled" : ""} />
             </div>
             <div class="field">
               <label>Пароль</label>
@@ -1572,6 +1605,7 @@ function viewLogin(){
             <div class="hint">
               Демо-акаунти:<br/>
               <span class="mono">boss / 1234</span> (керівник)<br/>
+              <span class="mono">viewer / view</span> (перегляд)<br/>
               <span class="mono">head2 / 1234</span> (нач. відділу №2)<br/>
               <span class="mono">head5 / 1234</span> (нач. відділу №5)<br/>
               Виконавці: <span class="mono">e21/e22/e51/e41 / 1234</span>
@@ -1766,7 +1800,7 @@ function viewControl(){
         <div class="actions">
           <button class="btn ghost" data-action="openTaskList" data-arg1="активні">📌 Активні задачі</button>
 
-          ${u.role==="boss" ? `
+          ${!u.readOnly ? (u.role==="boss" ? `
             <button class="btn ghost" data-action="openCreateTask" data-arg1="personal">➕ Моя задача</button>
             <button class="btn ghost" data-action="openCreateTask" data-arg1="managerial">
               <span class="qa-full">➕ Управлінська задача</span>
@@ -1774,7 +1808,7 @@ function viewControl(){
             </button>
           ` : `
             <button class="btn ghost" data-action="openCreateTask" data-arg1="internal">➕ Внутрішня задача</button>
-          `}
+          `) : ``}
         </div>
 
         ${u.role!=="boss" ? `` : ``}
@@ -1786,6 +1820,7 @@ function viewControl(){
     ? [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+      {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
     ]
     : [
@@ -1793,7 +1828,7 @@ function viewControl(){
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     ];
 
-  const subtitle = (u.role==="boss") ? "Керівник" : (getDeptById(u.departmentId)?.name ?? "Відділ");
+  const subtitle = roleSubtitle(u);
   const fabAction = ()=>{
     if(u.role==="boss"){
       showSheet("Додати", `
@@ -1813,7 +1848,7 @@ function viewControl(){
     title: "Контроль",
     subtitle,
     bodyHtml: body,
-    showFab: true,
+    showFab: !u.readOnly,
     fabAction,
     tabs
   });
@@ -2252,9 +2287,10 @@ function openAllDeptReport(periodKey="week"){
   };
   const range = ranges[periodKey] || ranges.week;
 
-  const allTasks = STATE.tasks.slice();
+  const allTasks = u.readOnly ? getVisibleTasksForUser(u) : STATE.tasks.slice();
+  const announcementsAll = u.readOnly ? getVisibleAnnouncementsForUser(u) : STATE.tasks.filter(isAnnouncement);
   const personalAll = allTasks.filter(t=>t.type==="personal" && !isAnnouncement(t));
-  const personalAnnouncements = allTasks.filter(t=>isAnnouncement(t));
+  const personalAnnouncements = announcementsAll;
 
   const activeNow = (list)=>list.filter(t=>t.status!=="закрито" && t.status!=="скасовано");
   const closedInPeriod = (list)=>list.filter(t=>{
@@ -2320,6 +2356,19 @@ function openAllDeptReport(periodKey="week"){
       `).join("") + `</ul>`
     : `<div class="hint">Немає даних по відділах.</div>`;
 
+  const personalBlock = !u.readOnly ? `
+    <div class="report-section">
+      <div class="report-title">Мої особисті задачі</div>
+      <div class="report-line">
+        <span class="badge b-blue">Активні ${personalActive.length}</span>
+        <span class="badge b-warn">Блокери ${personalBlockers}</span>
+        <span class="badge b-danger">Прострочені ${personalOverdue}</span>
+        <span class="badge b-ok">Закрито ${personalClosed.length}</span>
+      </div>
+      <div class="report-meta">Оголошення: активні <b>${annActive.length}</b> • закриті за період <b>${annClosed.length}</b></div>
+    </div>
+  ` : "";
+
   showSheet("Звіт по всім відділам", `
     <div class="item report-card" style="cursor:default;">
       <div class="row">
@@ -2380,16 +2429,7 @@ function openAllDeptReport(periodKey="week"){
       ${deptListHtml}
     </div>
 
-    <div class="report-section">
-      <div class="report-title">Мої особисті задачі</div>
-      <div class="report-line">
-        <span class="badge b-blue">Активні ${personalActive.length}</span>
-        <span class="badge b-warn">Блокери ${personalBlockers}</span>
-        <span class="badge b-danger">Прострочені ${personalOverdue}</span>
-        <span class="badge b-ok">Закрито ${personalClosed.length}</span>
-      </div>
-      <div class="report-meta">Оголошення: активні <b>${annActive.length}</b> • закриті за період <b>${annClosed.length}</b></div>
-    </div>
+    ${personalBlock}
 
     <div class="sep"></div>
     <button class="btn primary" data-action="hideSheet">Закрити</button>
@@ -2687,6 +2727,7 @@ function viewReports(){
   const tabs = (u.role==="boss")
     ? [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+      {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
     ]
@@ -2695,7 +2736,7 @@ function viewReports(){
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     ];
 
-  const subtitle = (u.role==="boss") ? "Керівник" : (getDeptById(u.departmentId)?.name ?? "Відділ");
+  const subtitle = roleSubtitle(u);
   appShell({title:"Звіти", subtitle, bodyHtml: body, showFab:false, fabAction:null, tabs});
 }
 
@@ -2785,6 +2826,266 @@ function openDeptSummary(summaryId){
     <div class="sep"></div>
     <button class="btn primary" data-action="hideSheet">Закрити</button>
   `);
+}
+
+/* ===========================
+   WEEKLY TASKS
+=========================== */
+function weeklyTasksForRange(range){
+  if(!STATE.weeklyTasks) STATE.weeklyTasks = [];
+  return STATE.weeklyTasks.filter(t=>t.weekStart===range.from)
+    .slice()
+    .sort((a,b)=>(b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || ""));
+}
+function weeklyTaskRows(list){
+  return list.map((t, idx)=>([
+    String(idx+1),
+    t.title || "",
+    t.description || "",
+    getUserById(t.createdBy)?.name || "",
+    t.updatedAt || t.createdAt || "",
+    t.weekStart || "",
+    t.weekEnd || "",
+  ]));
+}
+function openWeeklyTaskCreate(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Тижневі задачі може створювати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(u.readOnly){
+    showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const today = kyivDateStr();
+  const range = weekRangeFor(today, 0);
+  showSheet("Нова задача за тиждень", `
+    <div class="hint">Період: <span class="mono">${fmtDate(range.from)} — ${fmtDate(range.to)}</span></div>
+    <div class="field">
+      <label>Задача</label>
+      <input id="wTitle" placeholder="Наприклад: що виконано цього тижня" />
+    </div>
+    <div class="field">
+      <label>Опис (опційно)</label>
+      <textarea id="wDesc" placeholder="Деталі / результат / примітки"></textarea>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="createWeeklyTaskNow">Зберегти</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function createWeeklyTaskNow(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Тижневі задачі може створювати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(u.readOnly){
+    showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const title = (document.getElementById("wTitle")?.value || "").trim();
+  if(!title){
+    showSheet("Помилка", `<div class="hint">Вкажи назву задачі.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const desc = (document.getElementById("wDesc")?.value || "").trim();
+  const today = kyivDateStr();
+  const range = weekRangeFor(today, 0);
+  if(!STATE.weeklyTasks) STATE.weeklyTasks = [];
+  STATE.weeklyTasks.push({
+    id: uid("w"),
+    title,
+    description: desc,
+    weekStart: range.from,
+    weekEnd: range.to,
+    createdBy: u.id,
+    createdAt: nowIsoKyiv(),
+    updatedAt: nowIsoKyiv(),
+  });
+  saveState(STATE);
+  hideSheet();
+  render();
+  showToast("Збережено", "ok");
+}
+function openWeeklyTaskEdit(taskId){
+  const u = currentSessionUser();
+  const t = STATE.weeklyTasks?.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(u.readOnly){
+    showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  showSheet("Редагувати задачу", `
+    <div class="hint">Період: <span class="mono">${fmtDate(t.weekStart)} — ${fmtDate(t.weekEnd)}</span></div>
+    <div class="field">
+      <label>Задача</label>
+      <input id="wTitle" value="${htmlesc(t.title)}" />
+    </div>
+    <div class="field">
+      <label>Опис (опційно)</label>
+      <textarea id="wDesc">${htmlesc(t.description || "")}</textarea>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="saveWeeklyTaskEdits" data-arg1="${t.id}">Зберегти</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+    <div class="sep"></div>
+    <button class="btn danger" data-action="confirmDeleteWeeklyTask" data-arg1="${t.id}">Видалити</button>
+  `);
+}
+function saveWeeklyTaskEdits(taskId){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  if(u.readOnly){
+    showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const t = STATE.weeklyTasks?.find(x=>x.id===taskId);
+  if(!t) return;
+  const title = (document.getElementById("wTitle")?.value || "").trim();
+  if(!title){
+    showSheet("Помилка", `<div class="hint">Вкажи назву задачі.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const desc = (document.getElementById("wDesc")?.value || "").trim();
+  t.title = title;
+  t.description = desc;
+  t.updatedAt = nowIsoKyiv();
+  saveState(STATE);
+  hideSheet();
+  render();
+  showToast("Зміни збережено", "ok");
+}
+function confirmDeleteWeeklyTask(taskId){
+  showSheet("Видалити задачу", `
+    <div class="hint">Видалити цю задачу за тиждень?</div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn danger" data-action="deleteWeeklyTaskNow" data-arg1="${taskId}">Видалити</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function deleteWeeklyTaskNow(taskId){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  if(u.readOnly){
+    showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(!STATE.weeklyTasks) STATE.weeklyTasks = [];
+  STATE.weeklyTasks = STATE.weeklyTasks.filter(x=>x.id!==taskId);
+  saveState(STATE);
+  hideSheet();
+  render();
+  showToast("Видалено", "ok");
+}
+function exportWeeklyTasksExcelNow(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Експорт доступний тільки керівнику.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const today = kyivDateStr();
+  const range = weekRangeFor(today, 0);
+  const prev = weekRangeFor(today, 1);
+  const curTasks = weeklyTasksForRange(range);
+  const prevTasks = weeklyTasksForRange(prev);
+  const header = ["#", "Задача", "Опис", "Автор", "Оновлено", "Початок", "Кінець"];
+  const rowsCur = weeklyTaskRows(curTasks);
+  const rowsPrev = weeklyTaskRows(prevTasks);
+  const sheetCur = `Поточний ${range.from}`;
+  const sheetPrev = `Попередній ${prev.from}`;
+  if(window.XLSX){
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.aoa_to_sheet([header, ...rowsCur]);
+    const ws2 = XLSX.utils.aoa_to_sheet([header, ...rowsPrev]);
+    applyTimesFont(ws1);
+    applyTimesFont(ws2);
+    XLSX.utils.book_append_sheet(wb, ws1, sheetCur);
+    XLSX.utils.book_append_sheet(wb, ws2, sheetPrev);
+    XLSX.writeFile(wb, `weekly_${range.from}_${range.to}.xlsx`, {cellStyles:true});
+    hideSheet();
+    return;
+  }
+  const sheets = [];
+  sheets.push(buildWorksheetXml(sheetCur, header, rowsCur));
+  sheets.push(buildWorksheetXml(sheetPrev, header, rowsPrev));
+  const xml = buildTasksWorkbookXml(sheets);
+  downloadExcelXml(`weekly_${range.from}_${range.to}.xml`, xml);
+}
+function viewWeeklyTasks(){
+  if(!ensureLoggedIn()) return viewLogin();
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    UI.tab = ROUTES.CONTROL;
+    return viewControl();
+  }
+  UI.tab = ROUTES.WEEKLY;
+  const today = kyivDateStr();
+  const range = weekRangeFor(today, 0);
+  const prev = weekRangeFor(today, 1);
+  const curTasks = weeklyTasksForRange(range);
+  const prevTasks = weeklyTasksForRange(prev);
+  const diff = curTasks.length - prevTasks.length;
+  const diffLabel = (diff > 0 ? `+${diff}` : String(diff));
+  const renderList = (list, emptyText)=>{
+    if(!list.length) return `<div class="hint">${emptyText}</div>`;
+    return list.map(t=>{
+      const desc = (t.description || "").trim();
+      return `
+        <div class="item" style="cursor:default;">
+          <div class="row">
+            <div>
+              <div class="name">${htmlesc(t.title)}</div>
+              ${desc ? `<div class="hint" style="margin-top:8px;">${htmlesc(desc)}</div>` : ``}
+              <div class="sub" style="margin-top:6px;">
+                <span class="pill mono">${fmtDate(t.weekStart)} — ${fmtDate(t.weekEnd)}</span>
+                ${t.updatedAt ? `<span class="pill mono">${htmlesc(t.updatedAt.slice(11,16))}</span>` : ``}
+              </div>
+            </div>
+            ${u.readOnly ? `` : `<button class="btn ghost" data-action="openWeeklyTaskEdit" data-arg1="${t.id}">✏️</button>`}
+          </div>
+        </div>
+      `;
+    }).join("");
+  };
+  const headerActions = `
+    <div style="display:flex;gap:8px;">
+      <button class="btn ghost" data-action="exportWeeklyTasksExcelNow">⬇️ Excel</button>
+      ${u.readOnly ? `` : `<button class="btn primary" data-action="openWeeklyTaskCreate">➕ Додати</button>`}
+    </div>
+  `;
+  const body = `
+    <div class="card">
+      <div class="card-h">
+        <div class="t">Задачі за тиждень</div>
+        ${headerActions}
+      </div>
+      <div class="card-b">
+        <div class="hint">
+          Цей тиждень: <b>${curTasks.length}</b> • Попередній: <b>${prevTasks.length}</b> • Різниця: <b>${diffLabel}</b><br/>
+          Період: <span class="mono">${fmtDate(range.from)} — ${fmtDate(range.to)}</span>
+        </div>
+        <div class="sep"></div>
+        <div class="section-title">Цей тиждень</div>
+        <div class="list">${renderList(curTasks, "Немає задач за цей тиждень.")}</div>
+        <div class="sep"></div>
+        <div class="section-title">Попередній тиждень</div>
+        <div class="list">${renderList(prevTasks, "Немає задач за попередній тиждень.")}</div>
+      </div>
+    </div>
+  `;
+  const tabs = [
+    {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+    {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+    {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
+    {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+  ];
+  const subtitle = roleSubtitle(u);
+  appShell({title:"Тиждень", subtitle, bodyHtml: body, showFab:false, fabAction:null, tabs});
 }
 
 /* ===========================
@@ -3023,7 +3324,7 @@ function viewTasks(){
   const shownCount = (showTasks ? filtered.length : 0) + (showAnns ? annDisplay.length : 0);
   const totalCount = (showTasks ? tasks.length : 0) + (showAnns ? announcements.length : 0);
   const searchHint = `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${totalCount}</span></div>`;
-  const announcementBtn = (u.role==="boss" && showAnnouncementsScope)
+  const announcementBtn = (u.role==="boss" && !u.readOnly && showAnnouncementsScope)
     ? `<button class="btn ghost" data-action="openCreateAnnouncement">📣 Оголошення</button>`
     : ``;
   const buildDeptIndexMap = (list)=>{
@@ -3090,6 +3391,7 @@ function viewTasks(){
     const desc = (t.description || "").trim();
     const descLabel = isAnn ? "Текст" : "Опис";
     const descHtml = (!isAnn && desc) ? `<div class="task-desc">${descLabel}: ${htmlesc(desc)}</div>` : "";
+    const annDesc = (isAnn && t.audience==="meeting" && desc) ? `<div class="task-desc">Опис: ${htmlesc(desc)}</div>` : "";
     const closeUpd = isDone ? getCloseUpdate(t) : null;
     const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
     const closeShort = isDone ? closeDisplay(closeAt) : "";
@@ -3109,7 +3411,7 @@ function viewTasks(){
             <div class="task-line">
               <div class="task-title">
                 <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${titleHtml}</div>
-                ${descHtml}
+                ${descHtml}${annDesc}
                 ${resultHtml}
                 ${searchMeta}
                 ${meetingHtml}
@@ -3331,6 +3633,7 @@ function viewTasks(){
     ? [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+      {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
     ]
     : [
@@ -3338,7 +3641,7 @@ function viewTasks(){
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     ];
 
-  const subtitle = (u.role==="boss") ? "Керівник" : (getDeptById(u.departmentId)?.name ?? "Відділ");
+  const subtitle = roleSubtitle(u);
   const fabAction = ()=>{
     if(u.role==="boss"){
       showSheet("Додати", `
@@ -3354,7 +3657,7 @@ function viewTasks(){
     }
   };
 
-  appShell({title:"Задачі", subtitle, bodyHtml: body, showFab:true, fabAction, tabs});
+  appShell({title:"Задачі", subtitle, bodyHtml: body, showFab:!u.readOnly, fabAction, tabs});
 
   document.querySelectorAll(".dept-group.dept-disclosure").forEach((el)=>{
     el.addEventListener("toggle", ()=>{
@@ -3386,7 +3689,7 @@ function viewTasks(){
 
 function quickActionsForTask(u, t){
   const {isDeptHeadLike} = asDeptRole(u);
-  const isBoss = (u.role==="boss");
+  const isBoss = (u.role==="boss" && !u.readOnly);
   const canUpdate = isBoss || isDeptHeadLike;
   const canDelete = canDeleteTask(u, t);
   if(!canUpdate || t.status==="закрито"){
@@ -3444,8 +3747,13 @@ function quickActionsForTask(u, t){
 }
 
 function openStatusReasonModal(taskId, status){
+  const u = currentSessionUser();
   const t = STATE.tasks.find(x=>x.id===taskId);
   if(!t) return;
+  if(u.readOnly && t.type==="personal" && !isAnnouncement(t)){
+    showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування недоступне.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
   const isBlocking = status === "блокер";
   const isClosing = status === "закрито";
   const title = isBlocking
@@ -3494,6 +3802,10 @@ function openEditAnnouncement(taskId){
     <div class="field">
       <label>Заголовок</label>
       <input id="aTitle" value="${htmlesc(t.title)}" />
+    </div>
+    <div class="field">
+      <label>Опис (для наради, опційно)</label>
+      <textarea id="aDesc">${htmlesc(t.description || "")}</textarea>
     </div>
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="saveAnnouncementEdits" data-arg1="${t.id}">Зберегти</button>
@@ -3665,7 +3977,7 @@ function submitStatusReason(taskId, status){
   }
 
   const {isDeptHeadLike} = asDeptRole(u);
-  const isBoss = (u.role==="boss");
+  const isBoss = (u.role==="boss" && !u.readOnly);
   if(isAnnouncement(t) && !isBoss){
     showSheet("Немає прав", `<div class="hint">Оголошення може змінювати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
@@ -3904,6 +4216,7 @@ function openTask(taskId){
       </div>
 
       ${meetingMeta ? `<div class="hint ann-meta">🗣 ${htmlesc(meetingMeta)}</div>` : ``}
+      ${(isAnn && t.audience==="meeting" && t.description) ? `<div class="hint"><b>Опис:</b> ${htmlesc(t.description)}</div>` : ``}
       ${isAnn ? `` : `<div class="hint"><b>${descLabel}:</b> ${t.description ? htmlesc(t.description) : "—"}</div>`}
       ${(!isAnn && isDone) ? `<div class="hint"><b>Результат:</b>${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
 
@@ -3938,7 +4251,7 @@ function openEditTask(taskId){
     return;
   }
 
-  const isBoss = (u.role==="boss");
+  const isBoss = (u.role==="boss" && !u.readOnly);
   const isPersonal = (t.type==="personal");
   const today = kyivDateStr();
 
@@ -4067,7 +4380,7 @@ function saveTaskEdits(taskId){
     return;
   }
 
-  const isBoss = (u.role==="boss");
+  const isBoss = (u.role==="boss" && !u.readOnly);
   let departmentId = t.departmentId;
   let responsibleUserId = t.responsibleUserId;
 
@@ -4128,6 +4441,7 @@ function saveAnnouncementEdits(taskId){
 
   const audience = document.getElementById("aAudience")?.value || "staff";
   const title = (document.getElementById("aTitle")?.value || "").trim();
+  const desc = (document.getElementById("aDesc")?.value || "").trim();
   if(!title){
     showSheet("Помилка", `<div class="hint">Вкажи заголовок оголошення.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
@@ -4136,9 +4450,11 @@ function saveAnnouncementEdits(taskId){
   const changes = [];
   if(title !== t.title) changes.push(`Назва: "${shorten(t.title)}" → "${shorten(title)}"`);
   if(audience !== (t.audience || "staff")) changes.push(`Аудиторія: ${announcementAudienceLabel(t.audience)} → ${announcementAudienceLabel(audience)}`);
+  const nextDesc = (audience === "meeting") ? desc : "";
+  if(nextDesc !== (t.description || "")) changes.push(`Опис: "${shorten(t.description || "")}" → "${shorten(nextDesc)}"`);
   const note = changes.length ? `Оголошення: ${changes.join("; ")}` : "Оголошення без змін";
 
-  updateTask(taskId, {title, audience, complexity: null}, u.id, note);
+  updateTask(taskId, {title, audience, description: nextDesc, complexity: null}, u.id, note);
   hideSheet();
   render();
   showToast("Оголошення оновлено", "ok");
@@ -4412,6 +4728,10 @@ function openCreateAnnouncement(){
       <label>Заголовок</label>
       <input id="aTitle" />
     </div>
+    <div class="field">
+      <label>Опис (для наради, опційно)</label>
+      <textarea id="aDesc" placeholder="Коротко: що потрібно озвучити"></textarea>
+    </div>
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="createAnnouncementNow">Зберегти</button>
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
@@ -4427,10 +4747,12 @@ function createAnnouncementNow(){
   }
   const audience = document.getElementById("aAudience")?.value || "staff";
   const title = (document.getElementById("aTitle")?.value || "").trim();
+  const desc = (document.getElementById("aDesc")?.value || "").trim();
   if(!title){
     showSheet("Помилка", `<div class="hint">Вкажи заголовок оголошення.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
+  const finalDesc = (audience === "meeting") ? desc : "";
 
   const today = kyivDateStr();
   const id = genTaskCode("A");
@@ -4438,7 +4760,7 @@ function createAnnouncementNow(){
     id,
     type: "personal",
     title,
-    description: "",
+    description: finalDesc,
     departmentId: null,
     responsibleUserId: u.id,
     complexity: null,
@@ -4784,7 +5106,7 @@ function viewProfile(){
 
   const dept = u.departmentId ? getDeptById(u.departmentId) : null;
   const {isDeptHeadLike} = asDeptRole(u);
-  const roleText = (u.role==="boss") ? "Керівник" : (isDeptHeadLike ? "Начальник відділу / в.о." : "Виконавець");
+  const roleText = roleLabel(u);
   const delBanner = actingBannerForUser(u);
 
   const body = `
@@ -4819,11 +5141,11 @@ function viewProfile(){
       </div>
     </div>
   `;
-
   const tabs = (u.role==="boss")
     ? [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+      {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
     ]
     : [
@@ -4831,7 +5153,7 @@ function viewProfile(){
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     ];
 
-  const subtitle = (u.role==="boss") ? "Керівник" : (dept?.name ?? "Відділ");
+  const subtitle = roleSubtitle(u);
   appShell({title:"Профіль", subtitle, bodyHtml: body, showFab:false, fabAction:null, tabs});
 }
 
@@ -4865,6 +5187,7 @@ function viewAnalytics(){
   const u = currentSessionUser();
   if(!u || u.role!=="boss"){ UI.tab = ROUTES.CONTROL; return viewControl(); }
   UI.tab = ROUTES.ANALYTICS;
+  const tasksAll = u.readOnly ? getVisibleTasksForUser(u) : STATE.tasks.slice();
 
   const today = kyivDateStr();
   const days = Array.from({length:7}, (_,i)=>addDays(today, -(6-i)));
@@ -4877,12 +5200,12 @@ function viewAnalytics(){
     return null;
   };
   const weekClosed = days.map(d=>{
-    const count = STATE.tasks.filter(t=>closeDateForTask(t)===d).length;
+    const count = tasksAll.filter(t=>closeDateForTask(t)===d).length;
     return {date:d, count};
   });
   const maxClosed = Math.max(1, ...weekClosed.map(x=>x.count));
 
-  const closedDurations = STATE.tasks
+  const closedDurations = tasksAll
     .map(t=>{
       const closeDate = closeDateForTask(t);
       const startDate = toDateOnly(t.createdAt) || t.startDate;
@@ -4896,7 +5219,7 @@ function viewAnalytics(){
     ? (closedDurations.reduce((s,x)=>s+x.daysToClose, 0) / closedDurations.length).toFixed(1)
     : "—";
 
-  const topProblems = STATE.tasks
+  const topProblems = tasksAll
     .filter(t=>t.status!=="закрито" && t.status!=="скасовано")
     .map(t=>{
       const blockerUpdates = STATE.taskUpdates.filter(u=>
@@ -4911,7 +5234,7 @@ function viewAnalytics(){
     .slice(0,5);
 
   const deptLoad = STATE.departments.map(d=>{
-    const deptTasks = STATE.tasks.filter(t=>t.departmentId===d.id);
+    const deptTasks = tasksAll.filter(t=>t.departmentId===d.id);
     const active = deptTasks.filter(t=>t.status!=="закрито" && t.status!=="скасовано").length;
     const blockers = deptTasks.filter(t=>t.status==="блокер" || t.status==="очікування").length;
     const overdue = deptTasks.filter(t=>isOverdue(t)).length;
@@ -4919,8 +5242,8 @@ function viewAnalytics(){
   });
   const maxActive = Math.max(1, ...deptLoad.map(x=>x.active));
 
-  const activeDeptTasks = STATE.tasks.filter(t=>t.departmentId && t.status!=="закрито" && t.status!=="скасовано");
-  const recentClosed = STATE.tasks.filter(t=>t.departmentId && t.status==="закрито" && closeDateForTask(t) && closeDateForTask(t) >= days[0] && closeDateForTask(t) <= days[days.length-1]);
+  const activeDeptTasks = tasksAll.filter(t=>t.departmentId && t.status!=="закрито" && t.status!=="скасовано");
+  const recentClosed = tasksAll.filter(t=>t.departmentId && t.status==="закрито" && closeDateForTask(t) && closeDateForTask(t) >= days[0] && closeDateForTask(t) <= days[days.length-1]);
   const complexityKeys = COMPLEXITY_KEYS;
   const complexityCounts = complexityKeys.map(k=>({
     key:k,
@@ -5198,6 +5521,7 @@ function viewAnalytics(){
   const tabs = [
     {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
     {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+    {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
     {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
   ];
 
@@ -5341,6 +5665,13 @@ const ACTIONS = {
   submitReportNow,
   submitStatusReason,
   exportTasksExcelNow,
+  exportWeeklyTasksExcelNow,
+  openWeeklyTaskCreate,
+  openWeeklyTaskEdit,
+  createWeeklyTaskNow,
+  saveWeeklyTaskEdits,
+  confirmDeleteWeeklyTask,
+  deleteWeeklyTaskNow,
   toggleTheme,
   toggleAnalyticsDetails,
 };
@@ -5353,9 +5684,51 @@ const CHANGE_ACTIONS = {
   toggleCtrlAlways,
 };
 
+const READONLY_BLOCKED_ACTIONS = new Set([
+  "applyControlDate",
+  "applyMeetingRepeat",
+  "applyReportTemplate",
+  "autoFillReport",
+  "cancelDelegationUi",
+  "confirmCancelDelegation",
+  "confirmDeleteTask",
+  "confirmTaskClose",
+  "createAnnouncementNow",
+  "createDelegationNow",
+  "createTaskNow",
+  "deleteTaskNow",
+  "markMeetingAnnounced",
+  "openCreateAnnouncement",
+  "openCreateTask",
+  "openDelegationCreate",
+  "openDeptSummaryForm",
+  "openEditTask",
+  "openMeetingRepeat",
+  "openReportForm",
+  "saveAnnouncementEdits",
+  "saveTaskEdits",
+  "setControlDate",
+  "setMeetingRepeatTomorrow",
+  "setTaskStatus",
+  "submitDeptSummaryNow",
+  "submitReportNow",
+  "submitStatusReason",
+  "toggleMeetingHideToday",
+  "openWeeklyTaskCreate",
+  "openWeeklyTaskEdit",
+  "createWeeklyTaskNow",
+  "saveWeeklyTaskEdits",
+  "confirmDeleteWeeklyTask",
+  "deleteWeeklyTaskNow",
+]);
+
 function runMappedAction(name, arg1, arg2){
   const action = ACTIONS[name];
   if(typeof action !== "function") return;
+  if(isReadOnly(currentSessionUser()) && READONLY_BLOCKED_ACTIONS.has(name)){
+    showToast("Режим перегляду: зміни заборонені.", "warn");
+    return;
+  }
   if(typeof arg2 !== "undefined") return action(arg1, arg2);
   if(typeof arg1 !== "undefined") return action(arg1);
   return action();
@@ -5512,6 +5885,7 @@ function render(){
   if(UI.tab === ROUTES.CONTROL) return viewControl();
   if(UI.tab === ROUTES.REPORTS) return viewReports();
   if(UI.tab === ROUTES.TASKS) return viewTasks();
+  if(UI.tab === ROUTES.WEEKLY) return viewWeeklyTasks();
   if(UI.tab === ROUTES.ANALYTICS) return viewAnalytics();
 
   return viewControl();
