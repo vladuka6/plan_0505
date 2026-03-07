@@ -3436,10 +3436,10 @@ function viewTasks(){
     const deptName = t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
     const respName = getUserById(t.responsibleUserId)?.name || "—";
     const titleHtml = highlightMatch(t.title || "");
+    const isAnn = isAnnouncement(t);
     const titleBody = (isAnn && canEditTask(u, t))
       ? `<span class="ann-edit-link" data-action="openEditTask" data-arg1="${t.id}" title="Редагувати оголошення">${titleHtml}</span>`
       : titleHtml;
-    const isAnn = isAnnouncement(t);
     const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
     const searchMeta = taskSearch
       ? `<div class="task-search-meta">ID: <span class="mono">${highlightMatch(t.id)}</span> • ${highlightMatch(deptName)} • ${highlightMatch(respName)}${isAnn ? ` • ${highlightMatch(annLabel)}` : ""}</div>`
