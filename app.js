@@ -3075,17 +3075,14 @@ function viewWeeklyTasks(){
       const desc = (t.description || "").trim();
       const canDrag = editable && !u.readOnly;
       const dragAttrs = canDrag ? `draggable="true"` : "";
-      const dragCursor = canDrag ? "cursor:grab;" : "";
+      const baseCursor = u.readOnly ? "cursor:default;" : (canDrag ? "cursor:grab;" : "cursor:pointer;");
+      const openAttrs = u.readOnly ? "" : `data-action="openWeeklyTaskEdit" data-arg1="${t.id}"`;
       return `
-        <div class="item weekly-item" data-weekly-id="${t.id}" ${dragAttrs} style="cursor:default;${dragCursor}">
-          <div class="row">
+        <div class="item weekly-item" data-weekly-id="${t.id}" ${dragAttrs} style="${baseCursor}">
+          <div class="row" ${openAttrs}>
             <div>
               <div class="name"><span class="mono">${idx + 1}.</span> ${htmlesc(t.title)}</div>
               ${desc ? `<div class="hint" style="margin-top:8px;">${htmlesc(desc)}</div>` : ``}
-            </div>
-            <div style="display:flex;gap:8px;align-items:center;">
-              ${canDrag ? `<span class="pill mono" title="Перетягнути">↕️</span>` : ``}
-              ${u.readOnly ? `` : `<button class="btn ghost" data-action="openWeeklyTaskEdit" data-arg1="${t.id}">✏️</button>`}
             </div>
           </div>
         </div>
@@ -3437,9 +3434,6 @@ function viewTasks(){
     const respName = getUserById(t.responsibleUserId)?.name || "—";
     const titleHtml = highlightMatch(t.title || "");
     const isAnn = isAnnouncement(t);
-    const titleBody = (isAnn && canEditTask(u, t))
-      ? `<span class="ann-edit-link" data-action="openEditTask" data-arg1="${t.id}" title="Редагувати оголошення">${titleHtml}</span>`
-      : titleHtml;
     const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
     const searchMeta = taskSearch
       ? `<div class="task-search-meta">ID: <span class="mono">${highlightMatch(t.id)}</span> • ${highlightMatch(deptName)} • ${highlightMatch(respName)}${isAnn ? ` • ${highlightMatch(annLabel)}` : ""}</div>`
@@ -3485,7 +3479,7 @@ function viewTasks(){
           <div>
             <div class="task-line">
               <div class="task-title">
-                <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${titleBody}</div>
+                <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${titleHtml}</div>
                 ${descHtml}${annDesc}
                 ${resultHtml}
                 ${searchMeta}
@@ -3784,6 +3778,9 @@ function quickActionsForTask(u, t){
       btns.push(`<button class="btn ghost" data-action="toggleMeetingHideToday" data-arg1="${t.id}">${hiddenToday ? "👁 Повернути сьогодні" : "🙈 Сховати сьогодні"}</button>`);
     }
     btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Виконано</button>`);
+    if(canEditTask(u, t)){
+      btns.push(`<button class="btn ghost" data-action="openEditTask" data-arg1="${t.id}">✏️ Редагувати</button>`);
+    }
     if(canDelete) btns.push(`<button class="btn danger" data-action="confirmDeleteTask" data-arg1="${t.id}">🗑 Видалити</button>`);
     return `<div class="actions">${btns.join("")}</div>`;
   }
