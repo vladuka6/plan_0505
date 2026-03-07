@@ -3008,8 +3008,37 @@ function applyWeeklyOrder(weekStart, orderedIds){
     render();
   }
 }
+function applyAnnouncementOrder(orderedIds){
+  const orderMap = new Map(orderedIds.map((id, idx)=>[id, idx + 1]));
+  let changed = false;
+  STATE.tasks.forEach(t=>{
+    if(!isAnnouncement(t)) return;
+    if(!orderMap.has(t.id)) return;
+    const next = orderMap.get(t.id);
+    if(t.annOrder !== next){
+      t.annOrder = next;
+      changed = true;
+    }
+  });
+  if(changed){
+    saveState(STATE);
+    render();
+  }
+}
 function getWeeklyDragAfterElement(container, y){
   const items = [...container.querySelectorAll(".weekly-item:not(.dragging)")];
+  let closest = {offset: Number.NEGATIVE_INFINITY, element: null};
+  items.forEach(child=>{
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - (box.height / 2);
+    if(offset < 0 && offset > closest.offset){
+      closest = {offset, element: child};
+    }
+  });
+  return closest.element;
+}
+function getAnnouncementDragAfterElement(container, y){
+  const items = [...container.querySelectorAll(".task-item.announcement-item:not(.dragging)")];
   let closest = {offset: Number.NEGATIVE_INFINITY, element: null};
   items.forEach(child=>{
     const box = child.getBoundingClientRect();
@@ -3332,15 +3361,24 @@ function viewTasks(){
 
   const filtered = tasks.filter(filterFn).filter(matchesSearch).sort(taskSort);
   const announcementsMatched = announcements.filter(matchesSearch);
-  const announcementsFiltered = announcementsMatched
-    .filter(filterFn)
-    .sort((a,b)=>(b.updatedAt || "").localeCompare(a.updatedAt || ""));
-  const announcementsActive = announcementsMatched
-    .filter(t=>t.status!=="закрито" && t.status!=="скасовано")
-    .sort((a,b)=>(b.updatedAt || "").localeCompare(a.updatedAt || ""));
-  const announcementsClosed = announcementsMatched
-    .filter(t=>t.status==="закрито")
-    .sort((a,b)=>(b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  const sortAnnouncements = (list)=>{
+    if(!list.length) return [];
+    const allHaveOrder = list.every(t=>Number.isFinite(t.annOrder));
+    const sorted = list.slice().sort((a,b)=>{
+      if(allHaveOrder){
+        const ao = a.annOrder;
+        const bo = b.annOrder;
+        if(ao !== bo) return ao - bo;
+      }
+      return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+    });
+    return sorted;
+  };
+  const announcementsFiltered = sortAnnouncements(announcementsMatched.filter(filterFn));
+  const announcementsActive = sortAnnouncements(announcementsMatched
+    .filter(t=>t.status!=="закрито" && t.status!=="скасовано"));
+  const announcementsClosed = sortAnnouncements(announcementsMatched
+    .filter(t=>t.status==="закрито"));
 
   const chips = `
     <div class="chips task-chips">
@@ -3434,6 +3472,9 @@ function viewTasks(){
     const respName = getUserById(t.responsibleUserId)?.name || "—";
     const titleHtml = highlightMatch(t.title || "");
     const isAnn = isAnnouncement(t);
+    const canDragAnn = isAnn && u.role==="boss" && !u.readOnly;
+    const annDragAttrs = canDragAnn ? `draggable="true" data-ann-draggable="1"` : "";
+    const annDragClass = canDragAnn ? "ann-draggable" : "";
     const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
     const searchMeta = taskSearch
       ? `<div class="task-search-meta">ID: <span class="mono">${highlightMatch(t.id)}</span> • ${highlightMatch(deptName)} • ${highlightMatch(respName)}${isAnn ? ` • ${highlightMatch(annLabel)}` : ""}</div>`
@@ -3474,7 +3515,7 @@ function viewTasks(){
       ? `<button class="task-del-btn" type="button" data-action="confirmDeleteTask" data-arg1="${t.id}" title="Видалити">🗑</button>`
       : "";
     return `
-      <div class="item task-item ${isAnn ? "announcement-item" : ""} ${isBlocked ? "is-blocker" : ""} ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}">
+      <div class="item task-item ${isAnn ? "announcement-item" : ""} ${annDragClass} ${isBlocked ? "is-blocker" : ""} ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}" ${annDragAttrs}>
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">
@@ -3626,13 +3667,13 @@ function viewTasks(){
       `
       : ``
   );
-  const renderAnnouncementSection = (title, list, closedList, extraHtml="")=>`
+  const renderAnnouncementSection = (title, list, closedList, extraHtml="", listAttr="")=>`
     <details class="announcement-section" open>
       <summary class="announcement-title">
         ${title}
         <span class="ann-count mono">${list.length}</span>
       </summary>
-      <div class="announcement-list">
+      <div class="announcement-list"${listAttr}>
         ${list.length ? list.map(renderTaskItem).join("") : `<div class="hint">Немає оголошень.</div>`}
         ${renderAnnouncementDone(closedList)}
         ${extraHtml}
@@ -3654,8 +3695,8 @@ function viewTasks(){
     : ``;
   const announcementsBlock = showAnnouncementsScope ? `
     <div class="announcement-block">
-      ${renderAnnouncementSection("Оголошення для особового складу", staffAnnouncements, staffClosedAnnouncements)}
-      ${canSeeMeetingAnnouncements ? renderAnnouncementSection("Оголошення для наради", meetingAnnouncements, meetingClosedAnnouncements, hiddenMeetingBlock) : ``}
+      ${renderAnnouncementSection("Оголошення для особового складу", staffAnnouncements, staffClosedAnnouncements, "", ' data-ann-list="staff"')}
+      ${canSeeMeetingAnnouncements ? renderAnnouncementSection("Оголошення для наради", meetingAnnouncements, meetingClosedAnnouncements, hiddenMeetingBlock, ' data-ann-list="meeting"') : ``}
     </div>
   ` : "";
 
@@ -3727,6 +3768,42 @@ function viewTasks(){
   };
 
   appShell({title:"Задачі", subtitle, bodyHtml: body, showFab:!u.readOnly, fabAction, tabs});
+
+  if(showAnnouncementsScope && u.role==="boss" && !u.readOnly){
+    document.querySelectorAll('.announcement-list[data-ann-list]').forEach((listEl)=>{
+      let dragging = null;
+      listEl.querySelectorAll('.task-item.announcement-item[draggable="true"]').forEach(el=>{
+        el.addEventListener("dragstart", (e)=>{
+          dragging = el;
+          el.classList.add("dragging");
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", el.getAttribute("data-task-id") || "");
+        });
+        el.addEventListener("dragend", ()=>{
+          if(dragging) dragging.classList.remove("dragging");
+          dragging = null;
+        });
+      });
+      listEl.addEventListener("dragover", (e)=>{
+        if(!dragging) return;
+        e.preventDefault();
+        const afterEl = getAnnouncementDragAfterElement(listEl, e.clientY);
+        if(afterEl == null){
+          listEl.appendChild(dragging);
+        } else {
+          listEl.insertBefore(dragging, afterEl);
+        }
+      });
+      listEl.addEventListener("drop", (e)=>{
+        if(!dragging) return;
+        e.preventDefault();
+        const ids = [...listEl.querySelectorAll(":scope > .task-item.announcement-item")]
+          .map(el=>el.getAttribute("data-task-id"))
+          .filter(Boolean);
+        applyAnnouncementOrder(ids);
+      });
+    });
+  }
 
   document.querySelectorAll(".dept-group.dept-disclosure").forEach((el)=>{
     el.addEventListener("toggle", ()=>{
@@ -4523,7 +4600,19 @@ function saveAnnouncementEdits(taskId){
   if(nextDesc !== (t.description || "")) changes.push(`Опис: "${shorten(t.description || "")}" → "${shorten(nextDesc)}"`);
   const note = changes.length ? `Оголошення: ${changes.join("; ")}` : "Оголошення без змін";
 
-  updateTask(taskId, {title, audience, description: nextDesc, complexity: null}, u.id, note);
+  const audienceChanged = audience !== (t.audience || "staff");
+  let annOrderPatch = {};
+  if(audienceChanged){
+    const ordered = STATE.tasks.filter(x=>isAnnouncement(x) && (x.audience || "staff")===audience && Number.isFinite(x.annOrder));
+    if(ordered.length){
+      const nextOrder = Math.max(...ordered.map(x=>x.annOrder)) + 1;
+      annOrderPatch = {annOrder: nextOrder};
+    } else {
+      annOrderPatch = {annOrder: null};
+    }
+  }
+
+  updateTask(taskId, {title, audience, description: nextDesc, complexity: null, ...annOrderPatch}, u.id, note);
   hideSheet();
   render();
   showToast("Оголошення оновлено", "ok");
@@ -4822,6 +4911,9 @@ function createAnnouncementNow(){
     return;
   }
   const finalDesc = (audience === "meeting") ? desc : "";
+  const ordered = STATE.tasks.filter(t=>isAnnouncement(t) && (t.audience || "staff")===audience && Number.isFinite(t.annOrder));
+  const annOrder = ordered.length ? (Math.max(...ordered.map(t=>t.annOrder)) + 1) : null;
+  const annOrderPatch = Number.isFinite(annOrder) ? {annOrder} : {};
 
   const today = kyivDateStr();
   const id = genTaskCode("A");
@@ -4842,7 +4934,8 @@ function createAnnouncementNow(){
     createdAt: nowIsoKyiv(),
     updatedAt: nowIsoKyiv(),
     category: "announcement",
-    audience
+    audience,
+    ...annOrderPatch
   }, u.id);
 
   hideSheet();
