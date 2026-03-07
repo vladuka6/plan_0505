@@ -2835,7 +2835,12 @@ function weeklyTasksForRange(range){
   if(!STATE.weeklyTasks) STATE.weeklyTasks = [];
   return STATE.weeklyTasks.filter(t=>t.weekStart===range.from)
     .slice()
-    .sort((a,b)=>(b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || ""));
+    .sort((a,b)=>{
+      const ao = Number.isFinite(a.order) ? a.order : 1e9;
+      const bo = Number.isFinite(b.order) ? b.order : 1e9;
+      if(ao !== bo) return ao - bo;
+      return (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || "");
+    });
 }
 function weeklyTaskRows(list){
   return list.map((t, idx)=>([
@@ -2894,6 +2899,8 @@ function createWeeklyTaskNow(){
   const desc = (document.getElementById("wDesc")?.value || "").trim();
   const today = kyivDateStr();
   const range = weekRangeFor(today, 0);
+  const existing = weeklyTasksForRange(range);
+  const maxOrder = existing.reduce((m, t)=> Number.isFinite(t.order) ? Math.max(m, t.order) : m, 0);
   if(!STATE.weeklyTasks) STATE.weeklyTasks = [];
   STATE.weeklyTasks.push({
     id: uid("w"),
@@ -2901,6 +2908,7 @@ function createWeeklyTaskNow(){
     description: desc,
     weekStart: range.from,
     weekEnd: range.to,
+    order: maxOrder + 1,
     createdBy: u.id,
     createdAt: nowIsoKyiv(),
     updatedAt: nowIsoKyiv(),
@@ -2982,6 +2990,36 @@ function deleteWeeklyTaskNow(taskId){
   render();
   showToast("Видалено", "ok");
 }
+function applyWeeklyOrder(weekStart, orderedIds){
+  if(!STATE.weeklyTasks) STATE.weeklyTasks = [];
+  const orderMap = new Map(orderedIds.map((id, idx)=>[id, idx + 1]));
+  let changed = false;
+  STATE.weeklyTasks.forEach(t=>{
+    if(t.weekStart !== weekStart) return;
+    if(!orderMap.has(t.id)) return;
+    const next = orderMap.get(t.id);
+    if(t.order !== next){
+      t.order = next;
+      changed = true;
+    }
+  });
+  if(changed){
+    saveState(STATE);
+    render();
+  }
+}
+function getWeeklyDragAfterElement(container, y){
+  const items = [...container.querySelectorAll(".weekly-item:not(.dragging)")];
+  let closest = {offset: Number.NEGATIVE_INFINITY, element: null};
+  items.forEach(child=>{
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - (box.height / 2);
+    if(offset < 0 && offset > closest.offset){
+      closest = {offset, element: child};
+    }
+  });
+  return closest.element;
+}
 function exportWeeklyTasksExcelNow(){
   const u = currentSessionUser();
   if(!u || u.role!=="boss"){
@@ -3031,18 +3069,24 @@ function viewWeeklyTasks(){
   const prevTasks = weeklyTasksForRange(prev);
   const diff = curTasks.length - prevTasks.length;
   const diffLabel = (diff > 0 ? `+${diff}` : String(diff));
-  const renderList = (list, emptyText)=>{
+  const renderList = (list, emptyText, editable)=>{
     if(!list.length) return `<div class="hint">${emptyText}</div>`;
     return list.map((t, idx)=>{
       const desc = (t.description || "").trim();
+      const canDrag = editable && !u.readOnly;
+      const dragAttrs = canDrag ? `draggable="true"` : "";
+      const dragCursor = canDrag ? "cursor:grab;" : "";
       return `
-        <div class="item" style="cursor:default;">
+        <div class="item weekly-item" data-weekly-id="${t.id}" ${dragAttrs} style="cursor:default;${dragCursor}">
           <div class="row">
             <div>
               <div class="name"><span class="mono">${idx + 1}.</span> ${htmlesc(t.title)}</div>
               ${desc ? `<div class="hint" style="margin-top:8px;">${htmlesc(desc)}</div>` : ``}
             </div>
-            ${u.readOnly ? `` : `<button class="btn ghost" data-action="openWeeklyTaskEdit" data-arg1="${t.id}">✏️</button>`}
+            <div style="display:flex;gap:8px;align-items:center;">
+              ${canDrag ? `<span class="pill mono" title="Перетягнути">↕️</span>` : ``}
+              ${u.readOnly ? `` : `<button class="btn ghost" data-action="openWeeklyTaskEdit" data-arg1="${t.id}">✏️</button>`}
+            </div>
           </div>
         </div>
       `;
@@ -3067,10 +3111,10 @@ function viewWeeklyTasks(){
         </div>
         <div class="sep"></div>
         <div class="section-title">Цей тиждень</div>
-        <div class="list">${renderList(curTasks, "Немає задач за цей тиждень.")}</div>
+        <div class="list weekly-list" data-weekly-list="current">${renderList(curTasks, "Немає задач за цей тиждень.", true)}</div>
         <div class="sep"></div>
         <div class="section-title">Попередній тиждень</div>
-        <div class="list">${renderList(prevTasks, "Немає задач за попередній тиждень.")}</div>
+        <div class="list weekly-list" data-weekly-list="prev">${renderList(prevTasks, "Немає задач за попередній тиждень.", false)}</div>
       </div>
     </div>
   `;
@@ -3082,6 +3126,38 @@ function viewWeeklyTasks(){
   ];
   const subtitle = roleSubtitle(u);
   appShell({title:"Тиждень", subtitle, bodyHtml: body, showFab:false, fabAction:null, tabs});
+
+  const listEl = document.querySelector('[data-weekly-list="current"]');
+  if(listEl && !u.readOnly){
+    let dragging = null;
+    listEl.querySelectorAll(".weekly-item").forEach(el=>{
+      el.addEventListener("dragstart", (e)=>{
+        dragging = el;
+        el.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", el.getAttribute("data-weekly-id") || "");
+      });
+      el.addEventListener("dragend", ()=>{
+        if(dragging) dragging.classList.remove("dragging");
+        dragging = null;
+      });
+    });
+    listEl.addEventListener("dragover", (e)=>{
+      e.preventDefault();
+      const afterEl = getWeeklyDragAfterElement(listEl, e.clientY);
+      if(!dragging) return;
+      if(afterEl == null){
+        listEl.appendChild(dragging);
+      } else {
+        listEl.insertBefore(dragging, afterEl);
+      }
+    });
+    listEl.addEventListener("drop", (e)=>{
+      e.preventDefault();
+      const ids = [...listEl.querySelectorAll(".weekly-item")].map(el=>el.getAttribute("data-weekly-id")).filter(Boolean);
+      applyWeeklyOrder(range.from, ids);
+    });
+  }
 }
 
 /* ===========================
@@ -3360,6 +3436,9 @@ function viewTasks(){
     const deptName = t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : "Особисто";
     const respName = getUserById(t.responsibleUserId)?.name || "—";
     const titleHtml = highlightMatch(t.title || "");
+    const titleBody = (isAnn && canEditTask(u, t))
+      ? `<span class="ann-edit-link" data-action="openEditTask" data-arg1="${t.id}" title="Редагувати оголошення">${titleHtml}</span>`
+      : titleHtml;
     const isAnn = isAnnouncement(t);
     const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
     const searchMeta = taskSearch
@@ -3406,7 +3485,7 @@ function viewTasks(){
           <div>
             <div class="task-line">
               <div class="task-title">
-                <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${titleHtml}</div>
+                <div class="name ${titleTypeClass}"><span class="task-num mono">${numbering}</span> ${titleBody}</div>
                 ${descHtml}${annDesc}
                 ${resultHtml}
                 ${searchMeta}
@@ -3705,9 +3784,6 @@ function quickActionsForTask(u, t){
       btns.push(`<button class="btn ghost" data-action="toggleMeetingHideToday" data-arg1="${t.id}">${hiddenToday ? "👁 Повернути сьогодні" : "🙈 Сховати сьогодні"}</button>`);
     }
     btns.push(`<button class="btn ok" data-action="setTaskStatus" data-arg1="${t.id}" data-arg2="закрито">✅ Виконано</button>`);
-    if(canEditTask(u, t)){
-      btns.push(`<button class="btn ghost" data-action="openEditTask" data-arg1="${t.id}">✏️ Редагувати</button>`);
-    }
     if(canDelete) btns.push(`<button class="btn danger" data-action="confirmDeleteTask" data-arg1="${t.id}">🗑 Видалити</button>`);
     return `<div class="actions">${btns.join("")}</div>`;
   }

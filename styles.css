@@ -678,6 +678,13 @@
       min-width:0;
       flex:1;
     }
+    .ann-edit-link{
+      cursor:pointer;
+      border-bottom:1px dotted rgba(45,95,189,.45);
+    }
+    .ann-edit-link:hover{
+      border-bottom-color: rgba(45,95,189,.9);
+    }
     .task-desc{
       font-size:12px;
       color: var(--muted);
