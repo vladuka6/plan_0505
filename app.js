@@ -4505,16 +4505,18 @@ function openEditTask(taskId){
     </div>
 
     ${!isPersonal ? `
-      <div class="field">
-        <label>Відділ</label>
-        <select id="tDept" data-change="refreshRespOptions" ${isBoss ? "" : "disabled"}>
-          ${deptOptions.map(d=>`<option value="${d.id}" ${d.id===deptId ? "selected" : ""}>${htmlesc(d.name)}</option>`).join("")}
-        </select>
-      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Відділ</label>
+          <select id="tDept" data-change="refreshRespOptions" ${isBoss ? "" : "disabled"}>
+            ${deptOptions.map(d=>`<option value="${d.id}" ${d.id===deptId ? "selected" : ""}>${htmlesc(d.name)}</option>`).join("")}
+          </select>
+        </div>
 
-      <div class="field">
-        <label>Відповідальний</label>
-        <select id="tResp"></select>
+        <div class="field">
+          <label>Відповідальний</label>
+          <select id="tResp"></select>
+        </div>
       </div>
     ` : `
       <div class="field">
@@ -4547,12 +4549,14 @@ function openEditTask(taskId){
     </div>
 
     <div id="ctrlBlock">
-      <div class="field">
-        <label>Контрольна дата</label>
-        <input id="tCtrl" type="date" value="${t.nextControlDate ?? ""}" />
-      </div>
-      <div class="field">
-        <label><input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" ${t.controlAlways ? "checked" : ""} /> Постійний контроль (без дати)</label>
+      <div class="row2">
+        <div class="field">
+          <label>Контрольна дата</label>
+          <input id="tCtrl" type="date" value="${t.nextControlDate ?? ""}" />
+        </div>
+        <div class="field">
+          <label><input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" ${t.controlAlways ? "checked" : ""} /> Постійний контроль (без дати)</label>
+        </div>
       </div>
       <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
     </div>
@@ -4811,29 +4815,33 @@ function openCreateTask(kind){
 
   const deptBlock = !isPersonal ? (
     isManagerial ? `
-      <div class="field">
-        <label>Відділи</label>
-        <select id="tDeptMulti" multiple size="${Math.min(6, Math.max(3, deptOptions.length))}" data-change="refreshRespOptions">
-          ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
-        </select>
-        <div class="hint">Можна обрати кілька відділів (Ctrl/Shift). Якщо кілька — відповідальні керівники відділів.</div>
-      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Відділи</label>
+          <select id="tDeptMulti" multiple size="${Math.min(6, Math.max(3, deptOptions.length))}" data-change="refreshRespOptions">
+            ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
+          </select>
+          <div class="hint">Можна обрати кілька відділів (Ctrl/Shift). Якщо кілька — відповідальні керівники відділів.</div>
+        </div>
 
-      <div class="field">
-        <label>Відповідальний</label>
-        <select id="tResp"></select>
+        <div class="field">
+          <label>Відповідальний</label>
+          <select id="tResp"></select>
+        </div>
       </div>
     ` : `
-      <div class="field">
-        <label>Відділ</label>
-        <select id="tDept" data-change="refreshRespOptions">
-          ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
-        </select>
-      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Відділ</label>
+          <select id="tDept" data-change="refreshRespOptions">
+            ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
+          </select>
+        </div>
 
-      <div class="field">
-        <label>Відповідальний</label>
-        <select id="tResp"></select>
+        <div class="field">
+          <label>Відповідальний</label>
+          <select id="tResp"></select>
+        </div>
       </div>
     `
   ) : `
@@ -4893,12 +4901,14 @@ function openCreateTask(kind){
     </div>
 
     <div id="ctrlBlock">
-      <div class="field">
-        <label>Контрольна дата</label>
-        <input id="tCtrl" type="date" value="${addDays(today, 1)}" />
-      </div>
-      <div class="field">
-        <label><input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" /> Постійний контроль (без дати)</label>
+      <div class="row2">
+        <div class="field">
+          <label>Контрольна дата</label>
+          <input id="tCtrl" type="date" value="${addDays(today, 1)}" />
+        </div>
+        <div class="field">
+          <label><input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" /> Постійний контроль (без дати)</label>
+        </div>
       </div>
       <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
     </div>
