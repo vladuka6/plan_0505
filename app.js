@@ -3405,6 +3405,12 @@ function viewWeeklyTasks(){
     return list.map((t, idx)=>{
       const desc = (t.description || "").trim();
       const isClosed = (t.status === "закрито");
+      const closeAt = isClosed ? (t.closedAt || t.updatedAt || "") : "";
+      const closeShort = isClosed ? closeDisplay(closeAt) : "";
+      const closeHint = isClosed ? closeTitle(closeAt) : "";
+      const closeMeta = (isClosed && closeShort)
+        ? `<span class="pill mono" title="Закрито ${htmlesc(closeHint)}">✅ ${htmlesc(closeShort)}</span>`
+        : "";
       const canDrag = editable && !u.readOnly && !isClosed;
       const dragAttrs = canDrag ? `draggable="true"` : "";
       const baseCursor = u.readOnly ? "cursor:default;" : (canDrag ? "cursor:grab;" : "cursor:pointer;");
@@ -3416,6 +3422,7 @@ function viewWeeklyTasks(){
               <div class="name"><span class="mono">${idx + 1}.</span> ${htmlesc(t.title)}</div>
               ${desc ? `<div class="hint" style="margin-top:8px;">${htmlesc(desc)}</div>` : ``}
             </div>
+            ${closeMeta ? `<div class="weekly-meta">${closeMeta}</div>` : ``}
           </div>
         </div>
       `;

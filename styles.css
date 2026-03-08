@@ -383,6 +383,12 @@
       margin-bottom:10px;
     }
     .weekly-controls .field{margin:0;}
+    .weekly-meta{
+      display:flex;
+      align-items:flex-start;
+      gap:6px;
+      margin-left:8px;
+    }
     .weekly-item.is-completed .name{
       text-decoration: line-through;
       color:#000;
