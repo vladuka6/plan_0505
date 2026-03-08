@@ -4756,9 +4756,9 @@ function refreshRespOptions(){
   const respSel = document.getElementById("tResp");
   if(!respSel || typeof createTaskUserOptions !== "function") return;
 
-  const multi = [...document.querySelectorAll('input[name="tDeptMulti"]')];
-  if(multi.length){
-    const selected = multi.filter(x=>x.checked).map(x=>x.value);
+  const multiSel = document.getElementById("tDeptMulti");
+  if(multiSel){
+    const selected = [...multiSel.selectedOptions].map(o=>o.value);
     if(selected.length === 1){
       respSel.disabled = false;
       const opts = createTaskUserOptions(selected[0]);
@@ -4813,15 +4813,10 @@ function openCreateTask(kind){
     isManagerial ? `
       <div class="field">
         <label>Відділи</label>
-        <div class="dept-multi">
-          ${deptOptions.map(d=>`
-            <label class="check">
-              <input type="checkbox" name="tDeptMulti" value="${d.id}" data-change="refreshRespOptions" />
-              ${htmlesc(d.name)}
-            </label>
-          `).join("")}
-        </div>
-        <div class="hint">Можна обрати кілька відділів. Якщо кілька — відповідальні керівники відділів.</div>
+        <select id="tDeptMulti" multiple size="${Math.min(6, Math.max(3, deptOptions.length))}" data-change="refreshRespOptions">
+          ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
+        </select>
+        <div class="hint">Можна обрати кілька відділів (Ctrl/Shift). Якщо кілька — відповідальні керівники відділів.</div>
       </div>
 
       <div class="field">
@@ -4915,7 +4910,13 @@ function openCreateTask(kind){
   `);
 
   toggleNoDue();
-  if(!isPersonal) refreshRespOptions();
+  if(!isPersonal){
+    const multiSel = document.getElementById("tDeptMulti");
+    if(multiSel && multiSel.options.length && multiSel.selectedOptions.length===0){
+      multiSel.options[0].selected = true;
+    }
+    refreshRespOptions();
+  }
 }
 
 function createTaskNow(kind){
@@ -4958,8 +4959,8 @@ function createTaskNow(kind){
     departmentId = null;
     responsibleUserId = "u_boss";
   } else if(kind==="managerial"){
-    const multi = [...document.querySelectorAll('input[name="tDeptMulti"]')];
-    const selected = multi.filter(x=>x.checked).map(x=>x.value);
+    const multiSel = document.getElementById("tDeptMulti");
+    const selected = multiSel ? [...multiSel.selectedOptions].map(o=>o.value) : [];
     if(!selected.length){
       showSheet("Помилка", `<div class="hint">Обери хоча б один відділ.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
       return;
