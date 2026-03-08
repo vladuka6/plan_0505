@@ -911,9 +911,6 @@
       color: #c34762;
     }
     @media (min-width: 980px){
-      .task-line{
-        flex-wrap:nowrap;
-      }
       .task-title .name{
         white-space:nowrap;
         overflow:hidden;
@@ -927,9 +924,6 @@
       }
       .task-line .task-meta{
         flex-wrap:nowrap;
-        flex-direction:column;
-        align-items:flex-end;
-        min-width:160px;
       }
     }
 
