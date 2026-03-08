@@ -3643,7 +3643,7 @@ function viewTasks(){
                 ${blockerNote ? `<div class="task-note">⛔ ${blockerNote}</div>` : ``}
               </div>
               <div class="task-meta">
-                ${!hideStatus ? `<span class="task-token token-status ${statusChip.cls} compact-hide" title="Статус"><span class="token-ico">${statusChip.icon}</span><span class="token-text">${htmlesc(statusChip.label)}</span></span>` : ``}
+                ${!hideStatus ? `<span class="task-token token-status token-action ${statusChip.cls} compact-hide" data-action="openQuickActions" data-arg1="${t.id}" title="Статус"><span class="token-ico">${statusChip.icon}</span><span class="token-text">${htmlesc(statusChip.label)}</span></span>` : ``}
                 ${
                   isDone
                     ? `<span class="task-token token-due token-closed" title="${htmlesc(closeHint)}"><span class="token-ico">✅</span><span class="token-text">${htmlesc(closeShort || "—")}</span></span>`
@@ -4555,6 +4555,41 @@ function openTask(taskId){
         ? `<button class="btn primary" data-action="hideSheet">OK</button>`
         : (quickActionsForTask(u, t) || `<button class="btn primary" data-action="hideSheet">Закрити</button>`)
     }
+  `);
+}
+
+function openQuickActions(taskId){
+  const u = currentSessionUser();
+  const t = STATE.tasks.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(u.readOnly){
+    showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(isAnnouncement(t) && u.role!=="boss"){
+    showSheet("Немає прав", `<div class="hint">Оголошення може змінювати лише керівник.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  if(u.role!=="boss"){
+    const {isDeptHeadLike} = asDeptRole(u);
+    if(!isDeptHeadLike){
+      showSheet("Немає прав", `<div class="hint">Тільки начальник відділу (або в.о.) може змінювати статуси.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+      return;
+    }
+    if(t.departmentId && t.departmentId !== u.departmentId){
+      showSheet("Немає доступу", `<div class="hint">Ви не маєте доступу до іншого відділу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+      return;
+    }
+  }
+
+  const actions = quickActionsForTask(u, t);
+  if(!actions) return openTask(taskId);
+  showSheet("Швидкі дії", `
+    <div class="hint">${htmlesc(t.title || t.id)}</div>
+    <div class="sep"></div>
+    ${actions}
+    <div class="sep"></div>
+    <button class="btn ghost" data-action="hideSheet">Закрити</button>
   `);
 }
 
@@ -6214,6 +6249,7 @@ const ACTIONS = {
   openReport,
   openReportForm,
   openReportStatusTasks,
+  openQuickActions,
   openTasksExportDialog,
   openTask,
   openEditTask,

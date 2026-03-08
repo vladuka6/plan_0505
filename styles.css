@@ -904,6 +904,11 @@
       color:#7a5a34;
       font-weight:900;
     }
+    .task-token.token-action{cursor:pointer;}
+    .task-token.token-action:hover{
+      border-color: rgba(110,168,254,.55);
+      color: var(--text);
+    }
     .qa-short{display:none;}
     .token-flag{
       border-color: rgba(255,92,122,.45);
