@@ -385,9 +385,9 @@
     .task-item{
       position:relative;
       padding:12px 14px 12px 18px;
-      border:1px solid rgba(150,170,205,.45);
-      background: rgba(255,255,255,.86);
-      box-shadow: 0 10px 22px rgba(25,35,60,.08);
+      border:1px solid rgba(150,170,205,.28);
+      background: rgba(255,255,255,.74);
+      box-shadow: 0 6px 14px rgba(25,35,60,.05);
     }
     .task-item.announcement-item{
       border-style: dashed;
@@ -756,7 +756,7 @@
     }
     .task-line{
       display:flex;
-      align-items:center;
+      align-items:flex-start;
       justify-content:space-between;
       gap:8px;
       flex-wrap:wrap;
@@ -1001,7 +1001,7 @@
       .control-dept-counts{display:none;}
       .task-line{
         flex-direction:row;
-        align-items:center;
+        align-items:flex-start;
         gap:10px;
         overflow:hidden;
       }
