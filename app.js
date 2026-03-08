@@ -291,9 +291,10 @@ function richText(s){
   out = out.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<i>$2</i>");
   return out;
 }
-function formatToolbar(textareaId){
+function formatToolbar(textareaId, variant=""){
+  const cls = variant === "inline" ? "format-chips inline" : "format-chips";
   return `
-    <div class="format-chips" aria-label="Форматування тексту">
+    <div class="${cls}" aria-label="Форматування тексту">
       <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="bold" title="Жирний (**текст**)"><span class="format-ico">B</span></button>
       <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="italic" title="Курсив (*текст*)"><span class="format-ico"><i>I</i></span></button>
       <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="underline" title="Підкреслення (__текст__)"><span class="format-ico"><u>U</u></span></button>
@@ -3697,8 +3698,8 @@ function viewTasks(){
     const hideStatus = isAnn || isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
     const desc = (t.description || "").trim();
     const descLabel = isAnn ? "Текст" : "Опис";
-    const descHtml = (!isAnn && desc) ? `<div class="task-desc">${descLabel}: ${htmlesc(desc)}</div>` : "";
-    const annDesc = (isAnn && t.audience==="meeting" && desc) ? `<div class="task-desc">Опис: ${htmlesc(desc)}</div>` : "";
+    const descHtml = (!isAnn && desc) ? `<div class="task-desc rich-text">${descLabel}: ${richText(desc)}</div>` : "";
+    const annDesc = (isAnn && t.audience==="meeting" && desc) ? `<div class="task-desc rich-text">Опис: ${richText(desc)}</div>` : "";
     const closeUpd = isDone ? getCloseUpdate(t) : null;
     const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
     const closeShort = isDone ? closeDisplay(closeAt) : "";
@@ -4714,8 +4715,10 @@ function openEditTask(taskId){
     </div>
 
     <div class="field">
-      <label>Опис (опційно)</label>
-      ${formatToolbar("tDesc")}
+      <div class="label-row">
+        <label>Опис (опційно)</label>
+        ${formatToolbar("tDesc", "inline")}
+      </div>
       <textarea id="tDesc">${htmlesc(t.description || "")}</textarea>
     </div>
 
@@ -5187,8 +5190,10 @@ function openCreateTask(kind){
     </div>
 
     <div class="field">
-      <label>Опис (опційно)</label>
-      ${formatToolbar("tDesc")}
+      <div class="label-row">
+        <label>Опис (опційно)</label>
+        ${formatToolbar("tDesc", "inline")}
+      </div>
       <textarea id="tDesc" placeholder="Деталі / очікуваний результат"></textarea>
     </div>
 

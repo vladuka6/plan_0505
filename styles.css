@@ -431,21 +431,29 @@
       display:flex;flex-wrap: wrap;gap:8px;align-items:center;
     }
     .rich-text{white-space: pre-wrap;}
+    .label-row{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap:8px;
+    }
+    .label-row label{margin:0;}
     .format-chips{
       display:flex;
       gap:6px;
       margin:6px 0 8px;
       flex-wrap:wrap;
     }
+    .format-chips.inline{margin:0;}
     .format-chip{
-      height:28px;
-      padding:0 10px;
+      height:24px;
+      padding:0 8px;
       border-radius:999px;
       border:1px solid rgba(150,170,205,.55);
       background: rgba(255,255,255,.86);
       color: var(--text);
       cursor:pointer;
-      font-size:12px;
+      font-size:11px;
       font-weight:900;
       line-height:1;
       display:inline-flex;
