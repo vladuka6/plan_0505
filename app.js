@@ -4557,7 +4557,6 @@ function openEditTask(taskId){
 
       <div id="ctrlBlock" class="ctrl-inline">
         <div class="field">
-          <label>Контрольна дата</label>
           <input id="tCtrl" type="date" value="${t.nextControlDate ?? ""}" />
         </div>
         <div class="field">
@@ -4571,7 +4570,6 @@ function openEditTask(taskId){
         </div>
       </div>
     </div>
-    <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
 
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="saveTaskEdits" data-arg1="${t.id}">Зберегти</button>
@@ -4897,7 +4895,6 @@ function openCreateTask(kind){
 
         <div id="ctrlBlock" class="ctrl-inline">
           <div class="field">
-            <label>Контрольна дата</label>
             <input id="tCtrl" type="date" value="${addDays(today, 1)}" />
           </div>
           <div class="field">
@@ -4911,7 +4908,6 @@ function openCreateTask(kind){
           </div>
         </div>
       </div>
-      <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
     </div>
   `;
 
@@ -4922,13 +4918,6 @@ function openCreateTask(kind){
           <div class="field">
           <label>Відділи</label>
           <div class="dept-toggle-grid">
-            <label class="dept-toggle dept-toggle-all">
-              <span class="dept-name">Всі</span>
-              <span class="switch">
-                <input type="checkbox" name="tDeptAll" data-change="toggleDeptAll" />
-                <span class="slider"></span>
-              </span>
-            </label>
             ${deptOptions.map(d=>`
               <label class="dept-toggle">
                 <span class="dept-name">${htmlesc(d.name)}</span>
@@ -4938,8 +4927,14 @@ function openCreateTask(kind){
                   </span>
                 </label>
               `).join("")}
-            </div>
-            <div class="hint">Можна обрати кілька відділів. Якщо кілька — відповідальні керівники відділів.</div>
+            <label class="dept-toggle dept-toggle-all">
+              <span class="dept-name">Всі</span>
+              <span class="switch">
+                <input type="checkbox" name="tDeptAll" data-change="toggleDeptAll" />
+                <span class="slider"></span>
+              </span>
+            </label>
+          </div>
           </div>
         </div>
         ${metaBlock}
@@ -4971,15 +4966,6 @@ function openCreateTask(kind){
     kind==="internal" ? "Нова внутрішня задача" :
     "Нова моя задача",
     `
-    <div class="hint">
-      ${
-        kind==="managerial" ? "Управлінська: ставить керівник, закриває керівник." :
-        kind==="internal" ? "Внутрішня: створює начальник/в.о., закриває начальник/в.о." :
-        "Моя задача: для себе (дзвінки/нагадування/контроль)."
-      }
-      <br/>Контроль доступний лише <b>без дедлайну</b> (можна і <b>постійний контроль</b>).
-    </div>
-
     <div class="field">
       <label>Назва</label>
       <input id="tTitle" placeholder="Коротко: що зробити" />
