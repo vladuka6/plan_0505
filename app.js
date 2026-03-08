@@ -5628,34 +5628,117 @@ function viewAnalytics(){
   const blockersTotal = deptLoad.reduce((s,x)=>s+x.blockers,0);
   const overdueTotal = deptLoad.reduce((s,x)=>s+x.overdue,0);
 
+  const weekRangeLabel = `${fmtDate(days[0])} — ${fmtDate(days[days.length-1])}`;
+  const weekSpark = weekClosed.map(x=>`
+    <div class="spark-item">
+      <div class="spark-bar" style="height:${Math.max(6, Math.round((x.count/maxClosed)*100))}%"></div>
+      <div class="spark-label mono">${fmtDate(x.date).slice(5)}</div>
+    </div>
+  `).join("");
+  const deptLoadTopRows = deptLoad.slice().sort((a,b)=>b.active-a.active).slice(0,3).map(x=>`
+    <div class="mini-row">
+      <div class="mini-name">${htmlesc(x.dept.name)}</div>
+      <div class="mini-val mono">${x.active}</div>
+      <div class="mini-sub">⛔ ${x.blockers} • 🟠 ${x.overdue}</div>
+    </div>
+  `).join("") || `<div class="mini-empty">Немає даних.</div>`;
+  const topProblemsRows = topProblems.length
+    ? topProblems.slice(0,3).map(x=>{
+        const dept = x.task.departmentId ? getDeptById(x.task.departmentId)?.name : "Особисто";
+        const note = x.last?.note ? normalizeBlockerNote(x.last.note) : "";
+        return `
+          <div class="mini-row">
+            <div class="mini-name">${htmlesc(x.task.title)}</div>
+            <div class="mini-val mono">${x.count}</div>
+            <div class="mini-sub">${htmlesc(dept || "")}${note ? ` • ${htmlesc(shorten(note, 44))}` : ""}</div>
+          </div>
+        `;
+      }).join("")
+    : `<div class="mini-empty">Немає активних блокерів.</div>`;
+  const complexityTags = complexityCounts.length
+    ? complexityCounts.map(x=>`<span class="ana-tag">${htmlesc(x.label)} <b>${x.count}</b></span>`).join("")
+    : `<span class="ana-tag">Немає активних</span>`;
+
   const tiles = `
     <div class="analytics-tiles">
-      <div class="tile">
-        <div class="tile-title">Закрито за 7 днів</div>
-        <div class="tile-value mono">${closedTotal}</div>
-        <div class="tile-sub">Середній час: <span class="mono">${avgClose}</span> дн.</div>
+      <div class="analytics-hero">
+        <div class="hero-card">
+          <div class="hero-eyebrow">Аналітика • 7 днів</div>
+          <div class="hero-title">Пульс виконання</div>
+          <div class="hero-sub">Період: <span class="mono">${weekRangeLabel}</span></div>
+          <div class="hero-metrics">
+            <div class="hero-metric">
+              <div class="label">Закрито</div>
+              <div class="value mono">${closedTotal}</div>
+            </div>
+            <div class="hero-metric">
+              <div class="label">Середній час</div>
+              <div class="value mono">${avgClose} дн.</div>
+            </div>
+            <div class="hero-metric">
+              <div class="label">Активні</div>
+              <div class="value mono">${activeDeptTasks.length}</div>
+            </div>
+          </div>
+          <div class="hero-spark">${weekSpark}</div>
+        </div>
+        <div class="hero-stack">
+          <div class="signal-card">
+            <div class="signal-title">Блокери / прострочені</div>
+            <div class="signal-value mono">⛔ ${blockersTotal}</div>
+            <div class="signal-sub">🟠 ${overdueTotal} активні</div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-title">Контроль і дедлайни</div>
+            <div class="signal-value mono">⏱ ${activeDeadline.length}</div>
+            <div class="signal-sub">🗓 ${activeCtrlDate.length} • 🎯 ${activeCtrlAlways.length}</div>
+          </div>
+        </div>
       </div>
-      <div class="tile">
-        <div class="tile-title">Топ проблем (коротко)</div>
-        <div class="tile-list">${topProblemsShort}</div>
-      </div>
-      <div class="tile">
-        <div class="tile-title">Навантаження (топ‑3)</div>
-        <div class="tile-list">${deptLoadTop || "Немає даних."}</div>
-      </div>
-      <div class="tile">
-        <div class="tile-title">Контроль і дедлайни</div>
-        <div class="tile-value mono">⏱ ${activeDeadline.length}</div>
-        <div class="tile-sub">🗓 ${activeCtrlDate.length} • 🎯 ${activeCtrlAlways.length}</div>
-      </div>
-      <div class="tile">
-        <div class="tile-title">Складність активних</div>
-        <div class="tile-list">${complexitySummary || "Немає активних."}</div>
-      </div>
-      <div class="tile">
-        <div class="tile-title">Блокери / прострочені</div>
-        <div class="tile-value mono">⛔ ${blockersTotal}</div>
-        <div class="tile-sub">🟠 ${overdueTotal}</div>
+
+      <div class="analytics-mosaic">
+        <div class="metric-card wide">
+          <div class="metric-head">
+            <div class="metric-title">Топ проблем (коротко)</div>
+            <div class="metric-pill">${topProblems.length}</div>
+          </div>
+          <div class="metric-body">${topProblemsRows}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-head">
+            <div class="metric-title">Навантаження (топ‑3)</div>
+            <div class="metric-pill">${deptLoad.reduce((s,x)=>s+x.active,0)}</div>
+          </div>
+          <div class="metric-body">${deptLoadTopRows}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-head">
+            <div class="metric-title">Складність активних</div>
+            <div class="metric-pill">${activeDeptTasks.length}</div>
+          </div>
+          <div class="metric-tags">${complexityTags}</div>
+          <div class="metric-foot">${complexitySummary || "Немає активних."}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-head">
+            <div class="metric-title">Динаміка закриття</div>
+            <div class="metric-pill">${weekClosed.reduce((s,x)=>s+x.count,0)}</div>
+          </div>
+          <div class="metric-body">
+            <div class="analytics-bars">
+              ${weekClosed.map(x=>`
+                <div class="analytics-bar-row">
+                  <div class="analytics-label mono">${fmtDate(x.date).slice(0,5)}</div>
+                  <div class="analytics-bar-wrap"><div class="analytics-bar" style="width:${Math.round((x.count/maxClosed)*100)}%"></div></div>
+                  <div class="analytics-value mono">${x.count}</div>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
