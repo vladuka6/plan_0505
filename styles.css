@@ -376,6 +376,13 @@
     .section-title{font-weight:900;font-size:16px;color:var(--text);text-align:center;margin:6px 0 2px;}
     .weekly-list{gap:6px;margin-top: 6px;}
     .weekly-list .weekly-item{padding:8px 10px;}
+    .weekly-controls{
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap:8px;
+      margin-bottom:10px;
+    }
+    .weekly-controls .field{margin:0;}
     .weekly-item.is-completed .name{
       text-decoration: line-through;
       color:#000;

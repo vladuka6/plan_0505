@@ -224,6 +224,83 @@ function weekRangeFor(dateStr, offsetWeeks=0){
   const to = addDays(from, 6);
   return {from, to};
 }
+function weeksInMonth(dateStr){
+  const {from, to} = monthRangeFor(dateStr);
+  let cursor = startOfWeek(from);
+  const out = [];
+  while(cursor <= to){
+    out.push(cursor);
+    cursor = addDays(cursor, 7);
+  }
+  return out;
+}
+function resolveWeeklyAnchorDate(today){
+  const mode = UI.weeklyPeriodMode || "current";
+  if(mode === "prev") return addDays(today, -7);
+  if(mode === "next") return addDays(today, 7);
+  if(mode === "custom") return UI.weeklyAnchorDate || today;
+  if(mode === "month"){
+    const monthStr = UI.weeklyMonth || today.slice(0,7);
+    const weeks = weeksInMonth(`${monthStr}-01`);
+    const idx = Math.max(1, Math.min(UI.weeklyWeekIndex || 1, weeks.length));
+    UI.weeklyWeekIndex = idx;
+    UI.weeklyMonth = monthStr;
+    return weeks[idx - 1] || today;
+  }
+  return today;
+}
+function getWeeklySelectedRange(){
+  const today = kyivDateStr();
+  const anchor = resolveWeeklyAnchorDate(today);
+  UI.weeklyAnchorDate = anchor;
+  return weekRangeFor(anchor, 0);
+}
+function setWeeklyPeriodFromSelect(){
+  const sel = document.getElementById("weeklyPeriod");
+  const mode = sel?.value || "current";
+  UI.weeklyPeriodMode = mode;
+  if(mode === "current") UI.weeklyAnchorDate = kyivDateStr();
+  if(mode === "prev") UI.weeklyAnchorDate = addDays(kyivDateStr(), -7);
+  if(mode === "next") UI.weeklyAnchorDate = addDays(kyivDateStr(), 7);
+  if(mode === "custom"){
+    const v = document.getElementById("weeklyDate")?.value || kyivDateStr();
+    UI.weeklyAnchorDate = v;
+  }
+  if(mode === "month"){
+    const m = document.getElementById("weeklyMonth")?.value || kyivDateStr().slice(0,7);
+    const w = Number(document.getElementById("weeklyWeekIdx")?.value || 1);
+    UI.weeklyMonth = m;
+    UI.weeklyWeekIndex = w;
+    const weeks = weeksInMonth(`${m}-01`);
+    UI.weeklyAnchorDate = weeks[Math.max(0, Math.min(w, weeks.length) - 1)] || kyivDateStr();
+  }
+  render();
+}
+function setWeeklyAnchorDateFromInput(){
+  const v = document.getElementById("weeklyDate")?.value || kyivDateStr();
+  UI.weeklyPeriodMode = "custom";
+  UI.weeklyAnchorDate = v;
+  render();
+}
+function setWeeklyMonthFromInput(){
+  const m = document.getElementById("weeklyMonth")?.value || kyivDateStr().slice(0,7);
+  UI.weeklyPeriodMode = "month";
+  UI.weeklyMonth = m;
+  const weeks = weeksInMonth(`${m}-01`);
+  const idx = Math.max(1, Math.min(UI.weeklyWeekIndex || 1, weeks.length));
+  UI.weeklyWeekIndex = idx;
+  UI.weeklyAnchorDate = weeks[idx - 1] || kyivDateStr();
+  render();
+}
+function setWeeklyWeekIndexFromSelect(){
+  const w = Number(document.getElementById("weeklyWeekIdx")?.value || 1);
+  UI.weeklyPeriodMode = "month";
+  UI.weeklyWeekIndex = w;
+  const m = UI.weeklyMonth || kyivDateStr().slice(0,7);
+  const weeks = weeksInMonth(`${m}-01`);
+  UI.weeklyAnchorDate = weeks[Math.max(0, Math.min(w, weeks.length) - 1)] || kyivDateStr();
+  render();
+}
 function monthRangeFor(dateStr){
   const [y,m] = dateStr.split("-").map(Number);
   const from = `${y}-${String(m).padStart(2,'0')}-01`;
@@ -1477,6 +1554,10 @@ let UI = {
   analyticsShowDetails: false,
   reportFilter: "сьогодні",
   reportsControlDate: null, // NEW
+  weeklyPeriodMode: "current",
+  weeklyAnchorDate: null,
+  weeklyMonth: null,
+  weeklyWeekIndex: 1,
   theme: loadTheme(),
 };
 function toggleTheme(){
@@ -3006,8 +3087,7 @@ function openWeeklyTaskCreate(){
     showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
-  const today = kyivDateStr();
-  const range = weekRangeFor(today, 0);
+  const range = getWeeklySelectedRange();
   showSheet("Нова задача за тиждень", `
     <div class="hint">Період: <span class="mono">${fmtDate(range.from)} — ${fmtDate(range.to)}</span></div>
     <div class="field">
@@ -3041,7 +3121,7 @@ function createWeeklyTaskNow(){
   }
   const desc = (document.getElementById("wDesc")?.value || "").trim();
   const today = kyivDateStr();
-  const range = weekRangeFor(today, 0);
+  const range = getWeeklySelectedRange();
   const existing = weeklyTasksForRange(range);
   const maxOrder = existing.reduce((m, t)=> Number.isFinite(t.order) ? Math.max(m, t.order) : m, 0);
   if(!STATE.weeklyTasks) STATE.weeklyTasks = [];
@@ -3083,16 +3163,12 @@ function openWeeklyTaskEdit(taskId){
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="saveWeeklyTaskEdits" data-arg1="${t.id}">Зберегти</button>
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
-    </div>
-    <div class="sep"></div>
-    <div class="actions">
       ${isClosed
         ? `<button class="btn ghost" data-action="reopenWeeklyTaskNow" data-arg1="${t.id}">↩ Відкрити</button>`
         : `<button class="btn ok" data-action="closeWeeklyTaskNow" data-arg1="${t.id}">✅ Закрити</button>`
       }
+      <button class="btn danger" data-action="confirmDeleteWeeklyTask" data-arg1="${t.id}">Видалити</button>
     </div>
-    <div class="sep"></div>
-    <button class="btn danger" data-action="confirmDeleteWeeklyTask" data-arg1="${t.id}">Видалити</button>
   `);
 }
 function saveWeeklyTaskEdits(taskId){
@@ -3237,15 +3313,14 @@ function exportWeeklyTasksExcelNow(){
     showSheet("Немає прав", `<div class="hint">Експорт доступний тільки керівнику.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
-  const today = kyivDateStr();
-  const range = weekRangeFor(today, 0);
-  const prev = weekRangeFor(today, 1);
+  const range = getWeeklySelectedRange();
+  const prev = weekRangeFor(range.from, 1);
   const curTasks = weeklyTasksForRange(range);
   const prevTasks = weeklyTasksForRange(prev);
   const header = ["#", "Задача", "Опис", "Автор", "Оновлено", "Початок", "Кінець"];
   const rowsCur = weeklyTaskRows(curTasks);
   const rowsPrev = weeklyTaskRows(prevTasks);
-  const sheetCur = `Поточний ${range.from}`;
+  const sheetCur = `Обраний ${range.from}`;
   const sheetPrev = `Попередній ${prev.from}`;
   if(window.XLSX){
     const wb = XLSX.utils.book_new();
@@ -3274,12 +3349,57 @@ function viewWeeklyTasks(){
   }
   UI.tab = ROUTES.WEEKLY;
   const today = kyivDateStr();
-  const range = weekRangeFor(today, 0);
-  const prev = weekRangeFor(today, 1);
+  const anchor = resolveWeeklyAnchorDate(today);
+  UI.weeklyAnchorDate = anchor;
+  const range = weekRangeFor(anchor, 0);
+  const prev = weekRangeFor(range.from, 1);
   const curTasks = weeklyTasksForRange(range);
   const prevTasks = weeklyTasksForRange(prev);
   const diff = curTasks.length - prevTasks.length;
   const diffLabel = (diff > 0 ? `+${diff}` : String(diff));
+  const periodMode = UI.weeklyPeriodMode || "current";
+  const monthStr = UI.weeklyMonth || anchor.slice(0,7);
+  const monthWeeks = weeksInMonth(`${monthStr}-01`);
+  const weekIdx = Math.max(1, Math.min(UI.weeklyWeekIndex || 1, monthWeeks.length || 1));
+  UI.weeklyWeekIndex = weekIdx;
+  UI.weeklyMonth = monthStr;
+  const weekOptions = monthWeeks.map((start, idx)=>{
+    const end = addDays(start, 6);
+    const label = `${idx + 1} (${fmtDateShort(start)} — ${fmtDateShort(end)})`;
+    return `<option value="${idx + 1}" ${idx + 1 === weekIdx ? "selected" : ""}>${label}</option>`;
+  }).join("");
+  const periodControls = `
+    <div class="weekly-controls">
+      <div class="field">
+        <label>Період</label>
+        <select id="weeklyPeriod" data-change="setWeeklyPeriodFromSelect">
+          <option value="current" ${periodMode==="current"?"selected":""}>Цей тиждень</option>
+          <option value="prev" ${periodMode==="prev"?"selected":""}>Попередній тиждень</option>
+          <option value="next" ${periodMode==="next"?"selected":""}>Наступний тиждень</option>
+          <option value="custom" ${periodMode==="custom"?"selected":""}>Обрати дату</option>
+          <option value="month" ${periodMode==="month"?"selected":""}>Тиждень місяця</option>
+        </select>
+      </div>
+      ${periodMode==="custom" ? `
+        <div class="field">
+          <label>Дата тижня</label>
+          <input id="weeklyDate" type="date" value="${anchor}" data-change="setWeeklyAnchorDateFromInput" />
+        </div>
+      ` : ``}
+      ${periodMode==="month" ? `
+        <div class="field">
+          <label>Місяць</label>
+          <input id="weeklyMonth" type="month" value="${monthStr}" data-change="setWeeklyMonthFromInput" />
+        </div>
+        <div class="field">
+          <label>Тиждень</label>
+          <select id="weeklyWeekIdx" data-change="setWeeklyWeekIndexFromSelect">
+            ${weekOptions}
+          </select>
+        </div>
+      ` : ``}
+    </div>
+  `;
   const renderList = (list, emptyText, editable)=>{
     if(!list.length) return `<div class="hint">${emptyText}</div>`;
     return list.map((t, idx)=>{
@@ -3314,12 +3434,13 @@ function viewWeeklyTasks(){
         ${headerActions}
       </div>
       <div class="card-b">
+        ${periodControls}
         <div class="hint">
-          Цей тиждень: <b>${curTasks.length}</b> • Попередній: <b>${prevTasks.length}</b> • Різниця: <b>${diffLabel}</b><br/>
+          Обраний тиждень: <b>${curTasks.length}</b> • Попередній: <b>${prevTasks.length}</b> • Різниця: <b>${diffLabel}</b><br/>
           Період: <span class="mono">${fmtDate(range.from)} — ${fmtDate(range.to)}</span>
         </div>
         <div class="sep"></div>
-        <div class="section-title">Цей тиждень</div>
+        <div class="section-title">Обраний тиждень</div>
         <div class="list weekly-list" data-weekly-list="current">${renderList(curTasks, "Немає задач за цей тиждень.", true)}</div>
         <div class="sep"></div>
         <div class="section-title">Попередній тиждень</div>
@@ -6384,6 +6505,10 @@ const CHANGE_ACTIONS = {
   refreshRespOptions,
   setTaskSearchFromInput,
   setReportsControlDateFromInput,
+  setWeeklyPeriodFromSelect,
+  setWeeklyAnchorDateFromInput,
+  setWeeklyMonthFromInput,
+  setWeeklyWeekIndexFromSelect,
   toggleNoDue,
   toggleCtrlAlways,
   toggleDeptAll,
