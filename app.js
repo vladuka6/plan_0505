@@ -4760,6 +4760,20 @@ function refreshRespOptions(){
   const respSel = document.getElementById("tResp");
   if(!respSel || typeof createTaskUserOptions !== "function") return;
 
+  const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
+  if(multiToggles.length){
+    const selected = multiToggles.filter(x=>x.checked).map(x=>x.value);
+    if(selected.length === 1){
+      respSel.disabled = false;
+      const opts = createTaskUserOptions(selected[0]);
+      respSel.innerHTML = opts.map(x=>`<option value="${x.id}">${htmlesc(x.name)}</option>`).join("");
+    } else {
+      respSel.disabled = true;
+      respSel.innerHTML = `<option value="">Керівник відділу</option>`;
+    }
+    return;
+  }
+
   const multiSel = document.getElementById("tDeptMulti");
   if(multiSel){
     const selected = [...multiSel.selectedOptions].map(o=>o.value);
@@ -4818,10 +4832,18 @@ function openCreateTask(kind){
       <div class="row2">
         <div class="field">
           <label>Відділи</label>
-          <select id="tDeptMulti" multiple size="${Math.min(6, Math.max(3, deptOptions.length))}" data-change="refreshRespOptions">
-            ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
-          </select>
-          <div class="hint">Можна обрати кілька відділів (Ctrl/Shift). Якщо кілька — відповідальні керівники відділів.</div>
+          <div class="dept-toggle-grid">
+            ${deptOptions.map(d=>`
+              <label class="dept-toggle">
+                <span class="dept-name">${htmlesc(d.name)}</span>
+                <span class="switch">
+                  <input type="checkbox" name="tDeptMulti" value="${d.id}" data-change="refreshRespOptions" />
+                  <span class="slider"></span>
+                </span>
+              </label>
+            `).join("")}
+          </div>
+          <div class="hint">Можна обрати кілька відділів. Якщо кілька — відповідальні керівники відділів.</div>
         </div>
 
         <div class="field">
@@ -4921,9 +4943,9 @@ function openCreateTask(kind){
 
   toggleNoDue();
   if(!isPersonal){
-    const multiSel = document.getElementById("tDeptMulti");
-    if(multiSel && multiSel.options.length && multiSel.selectedOptions.length===0){
-      multiSel.options[0].selected = true;
+    const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
+    if(multiToggles.length && !multiToggles.some(x=>x.checked)){
+      multiToggles[0].checked = true;
     }
     refreshRespOptions();
   }
@@ -4969,8 +4991,8 @@ function createTaskNow(kind){
     departmentId = null;
     responsibleUserId = "u_boss";
   } else if(kind==="managerial"){
-    const multiSel = document.getElementById("tDeptMulti");
-    const selected = multiSel ? [...multiSel.selectedOptions].map(o=>o.value) : [];
+    const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
+    const selected = multiToggles.filter(x=>x.checked).map(x=>x.value);
     if(!selected.length){
       showSheet("Помилка", `<div class="hint">Обери хоча б один відділ.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
       return;
