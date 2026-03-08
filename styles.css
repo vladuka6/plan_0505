@@ -376,6 +376,14 @@
     .section-title{font-weight:900;font-size:16px;color:var(--text);text-align:center;margin:6px 0 2px;}
     .weekly-list{gap:6px;margin-top: 6px;}
     .weekly-list .weekly-item{padding:8px 10px;}
+    .weekly-item.is-completed .name{
+      text-decoration: line-through;
+      color:#000;
+    }
+    .weekly-item.is-completed .hint{
+      text-decoration: line-through;
+      color:#000;
+    }
     .item{
       padding: 12px;border-radius: var(--radius2);
       background: rgba(255,255,255,.72);
@@ -1401,6 +1409,10 @@
     body.theme-dark .task-item.is-completed .task-title .name,
     body.theme-dark .task-item.is-completed .task-desc,
     body.theme-dark .task-item.is-completed .task-result{
+      color: var(--text);
+    }
+    body.theme-dark .weekly-item.is-completed .name,
+    body.theme-dark .weekly-item.is-completed .hint{
       color: var(--text);
     }
     body.theme-dark .analytics-bar-wrap{ background: rgba(35,42,58,.7); }

@@ -2931,6 +2931,32 @@ function weeklyTaskRows(list){
     t.weekEnd || "",
   ]));
 }
+function setWeeklyTaskClosed(taskId, closed){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  if(u.readOnly){
+    showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const t = STATE.weeklyTasks?.find(x=>x.id===taskId);
+  if(!t) return;
+  if(closed){
+    t.status = "закрито";
+    t.closedAt = nowIsoKyiv();
+    t.closedBy = u.id;
+  } else {
+    t.status = null;
+    t.closedAt = null;
+    t.closedBy = null;
+  }
+  t.updatedAt = nowIsoKyiv();
+  saveState(STATE);
+  hideSheet();
+  render();
+  showToast(closed ? "Закрито" : "Відкрито", "ok");
+}
+function closeWeeklyTaskNow(taskId){ setWeeklyTaskClosed(taskId, true); }
+function reopenWeeklyTaskNow(taskId){ setWeeklyTaskClosed(taskId, false); }
 function openWeeklyTaskCreate(){
   const u = currentSessionUser();
   if(!u || u.role!=="boss"){
@@ -3004,6 +3030,7 @@ function openWeeklyTaskEdit(taskId){
     showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
+  const isClosed = (t.status === "закрито");
   showSheet("Редагувати задачу", `
     <div class="hint">Період: <span class="mono">${fmtDate(t.weekStart)} — ${fmtDate(t.weekEnd)}</span></div>
     <div class="field">
@@ -3017,6 +3044,13 @@ function openWeeklyTaskEdit(taskId){
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="saveWeeklyTaskEdits" data-arg1="${t.id}">Зберегти</button>
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+    <div class="sep"></div>
+    <div class="actions">
+      ${isClosed
+        ? `<button class="btn ghost" data-action="reopenWeeklyTaskNow" data-arg1="${t.id}">↩ Відкрити</button>`
+        : `<button class="btn ok" data-action="closeWeeklyTaskNow" data-arg1="${t.id}">✅ Закрити</button>`
+      }
     </div>
     <div class="sep"></div>
     <button class="btn danger" data-action="confirmDeleteWeeklyTask" data-arg1="${t.id}">Видалити</button>
@@ -3211,12 +3245,13 @@ function viewWeeklyTasks(){
     if(!list.length) return `<div class="hint">${emptyText}</div>`;
     return list.map((t, idx)=>{
       const desc = (t.description || "").trim();
-      const canDrag = editable && !u.readOnly;
+      const isClosed = (t.status === "закрито");
+      const canDrag = editable && !u.readOnly && !isClosed;
       const dragAttrs = canDrag ? `draggable="true"` : "";
       const baseCursor = u.readOnly ? "cursor:default;" : (canDrag ? "cursor:grab;" : "cursor:pointer;");
       const openAttrs = u.readOnly ? "" : `data-action="openWeeklyTaskEdit" data-arg1="${t.id}"`;
       return `
-        <div class="item weekly-item" data-weekly-id="${t.id}" ${dragAttrs} style="${baseCursor}">
+        <div class="item weekly-item ${isClosed ? "is-completed" : ""}" data-weekly-id="${t.id}" ${dragAttrs} style="${baseCursor}">
           <div class="row" ${openAttrs}>
             <div>
               <div class="name"><span class="mono">${idx + 1}.</span> ${htmlesc(t.title)}</div>
@@ -5157,6 +5192,7 @@ function createTaskNow(kind){
   }
 
   const today = kyivDateStr();
+  const status = "в_процесі";
 
   const type = kind;
   const idPrefix = (kind==="managerial") ? "T" : (kind==="internal" ? "I" : "P");
@@ -5216,8 +5252,6 @@ function createTaskNow(kind){
     departmentId = document.getElementById("tDept").value;
     responsibleUserId = document.getElementById("tResp").value;
   }
-
-  const status = "в_процесі";
 
   createTask({
     id,
@@ -6292,6 +6326,8 @@ const ACTIONS = {
   openWeeklyTaskEdit,
   createWeeklyTaskNow,
   saveWeeklyTaskEdits,
+  closeWeeklyTaskNow,
+  reopenWeeklyTaskNow,
   confirmDeleteWeeklyTask,
   deleteWeeklyTaskNow,
   toggleTheme,
@@ -6341,6 +6377,8 @@ const READONLY_BLOCKED_ACTIONS = new Set([
   "openWeeklyTaskEdit",
   "createWeeklyTaskNow",
   "saveWeeklyTaskEdits",
+  "closeWeeklyTaskNow",
+  "reopenWeeklyTaskNow",
   "confirmDeleteWeeklyTask",
   "deleteWeeklyTaskNow",
 ]);
