@@ -3100,6 +3100,25 @@ function applyAnnouncementOrder(orderedIds){
     render();
   }
 }
+function applyDeptOrder(deptKey, orderedIds){
+  const orderMap = new Map(orderedIds.map((id, idx)=>[id, idx + 1]));
+  let changed = false;
+  STATE.tasks.forEach(t=>{
+    if(isAnnouncement(t)) return;
+    const key = t.departmentId || "personal";
+    if(key !== deptKey) return;
+    if(!orderMap.has(t.id)) return;
+    const next = orderMap.get(t.id);
+    if(t.deptOrder !== next){
+      t.deptOrder = next;
+      changed = true;
+    }
+  });
+  if(changed){
+    saveState(STATE);
+    render();
+  }
+}
 function getWeeklyDragAfterElement(container, y){
   const items = [...container.querySelectorAll(".weekly-item:not(.dragging)")];
   let closest = {offset: Number.NEGATIVE_INFINITY, element: null};
@@ -3114,6 +3133,18 @@ function getWeeklyDragAfterElement(container, y){
 }
 function getAnnouncementDragAfterElement(container, y){
   const items = [...container.querySelectorAll(".task-item.announcement-item:not(.dragging)")];
+  let closest = {offset: Number.NEGATIVE_INFINITY, element: null};
+  items.forEach(child=>{
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - (box.height / 2);
+    if(offset < 0 && offset > closest.offset){
+      closest = {offset, element: child};
+    }
+  });
+  return closest.element;
+}
+function getTaskDragAfterElement(container, y){
+  const items = [...container.querySelectorAll(":scope > .task-item:not(.announcement-item):not(.dragging)")];
   let closest = {offset: Number.NEGATIVE_INFINITY, element: null};
   items.forEach(child=>{
     const box = child.getBoundingClientRect();
@@ -3392,6 +3423,9 @@ function viewTasks(){
       const deptKey = (t)=> `${t.departmentId ? "0" : "1"}_${deptName(t)}`;
       const dk = deptKey(a).localeCompare(deptKey(b));
       if(dk!==0) return dk;
+      const ao = Number.isFinite(a.deptOrder) ? a.deptOrder : null;
+      const bo = Number.isFinite(b.deptOrder) ? b.deptOrder : null;
+      if(ao!==null && bo!==null && ao!==bo) return ao - bo;
       const ba = bucket(a);
       const bb = bucket(b);
       if(ba!==bb) return ba - bb;
@@ -3401,6 +3435,9 @@ function viewTasks(){
       return (a.title || "").localeCompare(b.title || "");
     }
     if(isDeptScope){
+      const ao = Number.isFinite(a.deptOrder) ? a.deptOrder : null;
+      const bo = Number.isFinite(b.deptOrder) ? b.deptOrder : null;
+      if(ao!==null && bo!==null && ao!==bo) return ao - bo;
       const ba = bucket(a);
       const bb = bucket(b);
       if(ba!==bb) return ba - bb;
@@ -3548,8 +3585,11 @@ function viewTasks(){
     const titleHtml = highlightMatch(t.title || "");
     const isAnn = isAnnouncement(t);
     const canDragAnn = isAnn && u.role==="boss" && !u.readOnly;
+    const canDragTask = !isAnn && canEditTask(u, t) && !u.readOnly && t.status!=="закрито" && t.status!=="скасовано";
     const annDragAttrs = canDragAnn ? `draggable="true" data-ann-draggable="1"` : "";
+    const taskDragAttrs = canDragTask ? `draggable="true" data-task-draggable="1"` : "";
     const annDragClass = canDragAnn ? "ann-draggable" : "";
+    const taskDragClass = canDragTask ? "task-draggable" : "";
     const annLabel = isAnn ? announcementAudienceLabel(t.audience) : "";
     const searchMeta = taskSearch
       ? `<div class="task-search-meta">ID: <span class="mono">${highlightMatch(t.id)}</span> • ${highlightMatch(deptName)} • ${highlightMatch(respName)}${isAnn ? ` • ${highlightMatch(annLabel)}` : ""}</div>`
@@ -3590,7 +3630,7 @@ function viewTasks(){
       ? `<button class="task-del-btn" type="button" data-action="confirmDeleteTask" data-arg1="${t.id}" title="Видалити">🗑</button>`
       : "";
     return `
-      <div class="item task-item ${isAnn ? "announcement-item" : ""} ${annDragClass} ${isBlocked ? "is-blocker" : ""} ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}" ${annDragAttrs}>
+      <div class="item task-item ${isAnn ? "announcement-item" : ""} ${annDragClass} ${taskDragClass} ${isBlocked ? "is-blocker" : ""} ${t.dueDate ? "has-due" : "no-due"} ${ctrlClass} ${isDueTodayTask ? "due-today" : ""} ${isLate ? "is-overdue" : ""} ${isDone ? "is-completed" : ""}" data-type="${t.type}" data-task-id="${t.id}" ${annDragAttrs} ${taskDragAttrs}>
         <div class="row" data-action="openTask" data-arg1="${t.id}">
           <div>
             <div class="task-line">
@@ -3878,6 +3918,63 @@ function viewTasks(){
         applyAnnouncementOrder(ids);
       });
     });
+  }
+
+  const setupTaskDrag = (listEl, deptKey)=>{
+    const itemSelector = ':scope > .task-item:not(.announcement-item):not(.is-completed)';
+    const items = [...listEl.querySelectorAll(itemSelector)];
+    if(!items.length) return;
+    let dragging = null;
+    items.filter(el=>el.getAttribute("draggable")==="true").forEach(el=>{
+      el.addEventListener("dragstart", (e)=>{
+        dragging = el;
+        el.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", el.getAttribute("data-task-id") || "");
+      });
+      el.addEventListener("dragend", ()=>{
+        if(dragging) dragging.classList.remove("dragging");
+        dragging = null;
+      });
+    });
+    listEl.addEventListener("dragover", (e)=>{
+      if(!dragging) return;
+      e.preventDefault();
+      const afterEl = getTaskDragAfterElement(listEl, e.clientY);
+      if(afterEl == null){
+        listEl.appendChild(dragging);
+      } else {
+        listEl.insertBefore(dragging, afterEl);
+      }
+    });
+    listEl.addEventListener("drop", (e)=>{
+      if(!dragging) return;
+      e.preventDefault();
+      const ids = [...listEl.querySelectorAll(itemSelector)]
+        .map(el=>el.getAttribute("data-task-id"))
+        .filter(Boolean);
+      applyDeptOrder(deptKey, ids);
+    });
+  };
+
+  if(!u.readOnly){
+    const groupLists = document.querySelectorAll(".dept-group .dept-list");
+    if(groupLists.length){
+      groupLists.forEach(listEl=>{
+        const deptKey = listEl.closest(".dept-group")?.getAttribute("data-dept-key") || "personal";
+        setupTaskDrag(listEl, deptKey);
+      });
+    } else {
+      const listEl = document.querySelector(".list");
+      if(listEl){
+        const first = listEl.querySelector('.task-item[data-task-id]:not(.announcement-item)');
+        if(first){
+          const t = STATE.tasks.find(x=>x.id===first.getAttribute("data-task-id"));
+          const deptKey = t?.departmentId || "personal";
+          setupTaskDrag(listEl, deptKey);
+        }
+      }
+    }
   }
 
   document.querySelectorAll(".dept-group.dept-disclosure").forEach((el)=>{

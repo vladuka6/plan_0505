@@ -838,6 +838,8 @@
     }
     .task-item.announcement-item.ann-draggable{cursor:grab;}
     .task-item.announcement-item.ann-draggable.dragging{opacity:.6;}
+    .task-item.task-draggable{cursor:grab;}
+    .task-item.task-draggable.dragging{opacity:.6;}
     .task-item.is-overdue::before{
       content:"";
       position:absolute;
