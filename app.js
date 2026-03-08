@@ -3051,7 +3051,7 @@ function weeklyTaskRows(list){
     t.weekEnd || "",
   ]));
 }
-function setWeeklyTaskClosed(taskId, closed){
+function setWeeklyTaskClosed(taskId, closed, closeAtOverride=null){
   const u = currentSessionUser();
   if(!u || u.role!=="boss") return;
   if(u.readOnly){
@@ -3062,7 +3062,7 @@ function setWeeklyTaskClosed(taskId, closed){
   if(!t) return;
   if(closed){
     t.status = "закрито";
-    t.closedAt = nowIsoKyiv();
+    t.closedAt = closeAtOverride || nowIsoKyiv();
     t.closedBy = u.id;
   } else {
     t.status = null;
@@ -3075,8 +3075,46 @@ function setWeeklyTaskClosed(taskId, closed){
   render();
   showToast(closed ? "Закрито" : "Відкрито", "ok");
 }
-function closeWeeklyTaskNow(taskId){ setWeeklyTaskClosed(taskId, true); }
+function closeWeeklyTaskNow(taskId){ openWeeklyClosePicker(taskId); }
 function reopenWeeklyTaskNow(taskId){ setWeeklyTaskClosed(taskId, false); }
+function openWeeklyClosePicker(taskId){
+  const u = currentSessionUser();
+  const t = STATE.weeklyTasks?.find(x=>x.id===taskId);
+  if(!u || !t) return;
+  if(u.readOnly){
+    showSheet("Немає доступу", `<div class="hint">Переглядовий режим — редагування вимкнено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const now = t.closedAt || nowIsoKyiv();
+  const parts = splitDateTimeLoose(now);
+  showSheet("Закрити задачу", `
+    <div class="hint">Обери дату та час закриття.</div>
+    <div class="row2">
+      <div class="field">
+        <label>Дата</label>
+        <input id="wCloseDate" type="date" value="${htmlesc(parts.date)}" />
+      </div>
+      <div class="field">
+        <label>Час</label>
+        <input id="wCloseTime" type="time" value="${htmlesc(parts.time)}" />
+      </div>
+    </div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn ok" data-action="applyWeeklyClose" data-arg1="${t.id}">✅ Закрити</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function applyWeeklyClose(taskId){
+  const date = document.getElementById("wCloseDate")?.value || null;
+  const time = document.getElementById("wCloseTime")?.value || "";
+  if(!date){
+    showSheet("Помилка", `<div class="hint">Вкажи дату закриття.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const closeAt = joinDateTime(date, time);
+  setWeeklyTaskClosed(taskId, true, closeAt);
+}
 function openWeeklyTaskCreate(){
   const u = currentSessionUser();
   if(!u || u.role!=="boss"){
@@ -6502,6 +6540,7 @@ const ACTIONS = {
   saveWeeklyTaskEdits,
   closeWeeklyTaskNow,
   reopenWeeklyTaskNow,
+  applyWeeklyClose,
   confirmDeleteWeeklyTask,
   deleteWeeklyTaskNow,
   toggleTheme,
@@ -6557,6 +6596,7 @@ const READONLY_BLOCKED_ACTIONS = new Set([
   "saveWeeklyTaskEdits",
   "closeWeeklyTaskNow",
   "reopenWeeklyTaskNow",
+  "applyWeeklyClose",
   "confirmDeleteWeeklyTask",
   "deleteWeeklyTaskNow",
 ]);
