@@ -385,9 +385,16 @@
     .weekly-controls .field{margin:0;}
     .weekly-meta{
       display:flex;
-      align-items:flex-start;
+      align-items:center;
+      align-self:flex-start;
       gap:6px;
       margin-left:8px;
+      margin-top:2px;
+    }
+    .weekly-meta .pill{
+      padding: 4px 8px;
+      font-size: 11px;
+      line-height: 1.1;
     }
     .weekly-item.is-completed .name{
       text-decoration: line-through;
