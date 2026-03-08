@@ -3545,7 +3545,13 @@ function viewTasks(){
   const annDisplay = (filter==="активні") ? announcementsActive : announcementsFiltered;
   const shownCount = (showTasks ? filtered.length : 0) + (showAnns ? annDisplay.length : 0);
   const totalCount = (showTasks ? tasks.length : 0) + (showAnns ? announcements.length : 0);
-  const searchHint = `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${totalCount}</span></div>`;
+  const activeCount = (showTasks ? tasks.filter(t=>t.status!=="закрито" && t.status!=="скасовано").length : 0)
+    + (showAnns ? announcements.filter(t=>t.status!=="закрито" && t.status!=="скасовано").length : 0);
+  const closedCount = (showTasks ? tasks.filter(t=>t.status==="закрито" || t.status==="скасовано").length : 0)
+    + (showAnns ? announcements.filter(t=>t.status==="закрито" || t.status==="скасовано").length : 0);
+  const searchHint = (filter==="активні")
+    ? `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${activeCount}</span> активних</div>`
+    : `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${totalCount}</span> (всього)<div class="subhint">активні <span class="mono">${activeCount}</span>, закриті <span class="mono">${closedCount}</span></div></div>`;
   const announcementBtn = (u.role==="boss" && !u.readOnly && showAnnouncementsScope)
     ? `<button class="btn ghost" data-action="openCreateAnnouncement">📣 Оголошення</button>`
     : ``;
