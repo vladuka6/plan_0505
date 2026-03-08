@@ -563,9 +563,12 @@ function controlHint(task){
   return "";
 }
 function lastBlockerUpdate(task){
-  return STATE.taskUpdates
+  const updates = STATE.taskUpdates
     .filter(u=>u.taskId===task.id && (u.status==="блокер" || u.status==="очікування"))
-    .sort((a,b)=>b.at.localeCompare(a.at))[0] || null;
+    .sort((a,b)=>b.at.localeCompare(a.at));
+  if(!updates.length) return null;
+  const withReason = updates.find(u=>isBlockerReasonNote(u.note));
+  return withReason || updates[0];
 }
 function getCloseUpdate(task){
   if(!task) return null;
