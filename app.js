@@ -2381,37 +2381,37 @@ function openAllDeptReport(periodKey="week"){
     <div class="report-section">
       <div class="report-title">Загальна аналітика</div>
       <div class="report-grid">
-        <div class="report-tile">
+        <div class="report-tile clickable" data-action="openReportStatusTasks" data-arg1="active" data-arg2="${periodKey}">
           <div class="k">Активні зараз</div>
           <div class="v">${globalActive.length}</div>
           <div class="s">усі відділи</div>
         </div>
-        <div class="report-tile">
+        <div class="report-tile clickable" data-action="openReportStatusTasks" data-arg1="closed" data-arg2="${periodKey}">
           <div class="k">Закрито за період</div>
           <div class="v">${globalClosed.length}</div>
           <div class="s">${htmlesc(range.label.toLowerCase())}</div>
         </div>
-        <div class="report-tile">
+        <div class="report-tile clickable" data-action="openReportStatusTasks" data-arg1="on_time" data-arg2="${periodKey}">
           <div class="k">В строк</div>
           <div class="v">${globalOnTime}</div>
           <div class="s">${globalClosedWithDue.length ? `${pct(globalOnTime, globalClosedWithDue.length)}%` : "—"}</div>
         </div>
-        <div class="report-tile">
+        <div class="report-tile clickable" data-action="openReportStatusTasks" data-arg1="closed_late" data-arg2="${periodKey}">
           <div class="k">Прострочено при закритті</div>
           <div class="v">${globalLate.length}</div>
           <div class="s">${globalClosedWithDue.length ? `${pct(globalLate.length, globalClosedWithDue.length)}%` : "—"}</div>
         </div>
-        <div class="report-tile">
+        <div class="report-tile clickable" data-action="openReportStatusTasks" data-arg1="overdue" data-arg2="${periodKey}">
           <div class="k">Прострочені зараз</div>
           <div class="v">${globalOverdue}</div>
           <div class="s">активні</div>
         </div>
-        <div class="report-tile">
+        <div class="report-tile clickable" data-action="openReportStatusTasks" data-arg1="blockers" data-arg2="${periodKey}">
           <div class="k">Блокери зараз</div>
           <div class="v">${globalBlockers}</div>
           <div class="s">активні</div>
         </div>
-        <div class="report-tile">
+        <div class="report-tile clickable" data-action="openReportStatusTasks" data-arg1="stale" data-arg2="${periodKey}">
           <div class="k">Без оновлень 7 днів</div>
           <div class="v">${globalStale}</div>
           <div class="s">активні</div>
@@ -2431,6 +2431,81 @@ function openAllDeptReport(periodKey="week"){
 
     ${personalBlock}
 
+    <div class="sep"></div>
+    <button class="btn primary" data-action="hideSheet">Закрити</button>
+  `);
+}
+
+function openReportStatusTasks(filterKey, periodKey="week"){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+
+  const today = kyivDateStr();
+  const ranges = {
+    week: {...weekRangeFor(today, 0), label: "Цей тиждень"},
+    prev_week: {...weekRangeFor(today, 1), label: "Попередній тиждень"},
+    month: {...monthRangeFor(today), label: "Цей місяць"},
+  };
+  const range = ranges[periodKey] || ranges.week;
+  const allTasks = u.readOnly ? getVisibleTasksForUser(u) : STATE.tasks.slice();
+  const activeNow = (list)=>list.filter(t=>t.status!=="закрито" && t.status!=="скасовано");
+  const closedInPeriod = (list)=>list.filter(t=>{
+    const closeDate = getCloseDateForTask(t);
+    return closeDate && inRange(closeDate, range.from, range.to);
+  });
+
+  let title = "";
+  let list = [];
+  if(filterKey==="active"){
+    title = "Активні зараз";
+    list = activeNow(allTasks);
+  } else if(filterKey==="overdue"){
+    title = "Прострочені зараз";
+    list = activeNow(allTasks).filter(t=>isOverdue(t));
+  } else if(filterKey==="blockers"){
+    title = "Блокери зараз";
+    list = activeNow(allTasks).filter(t=>["блокер","очікування"].includes(t.status));
+  } else if(filterKey==="stale"){
+    title = "Без оновлень 7 днів";
+    list = activeNow(allTasks).filter(t=>staleTask(t,7));
+  } else if(filterKey==="closed"){
+    title = `Закрито за період (${range.label.toLowerCase()})`;
+    list = closedInPeriod(allTasks);
+  } else if(filterKey==="on_time"){
+    title = `В строк (${range.label.toLowerCase()})`;
+    list = closedInPeriod(allTasks).filter(t=>!!t.dueDate && !isClosedLate(t, getCloseDateForTask(t)));
+  } else if(filterKey==="closed_late"){
+    title = `Прострочено при закритті (${range.label.toLowerCase()})`;
+    list = closedInPeriod(allTasks).filter(t=>!!t.dueDate && isClosedLate(t, getCloseDateForTask(t)));
+  } else {
+    return;
+  }
+
+  const sorted = list.slice().sort((a,b)=> (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  const rows = sorted.length ? `
+    <ul class="report-list">
+      ${sorted.map(t=>{
+        const dept = t.departmentId ? (getDeptById(t.departmentId)?.name || "Відділ") : (isAnnouncement(t) ? "Оголошення" : "Особисто");
+        const due = t.dueDate ? fmtDate(t.dueDate) : "—";
+        const closeDate = getCloseDateForTask(t);
+        const closeInfo = closeDate ? ` • Закрито: <b>${fmtDate(closeDate)}</b>` : "";
+        return `
+          <li data-action="openTask" data-arg1="${t.id}">
+            <div class="report-line">
+              <span class="report-strong">${htmlesc(t.title || t.id)}</span>
+              <span class="badge b-blue">${htmlesc(statusLabel(t.status))}</span>
+            </div>
+            <div class="report-meta">Відділ: <b>${htmlesc(dept)}</b> • Дедлайн: <b>${due}</b>${closeInfo}</div>
+          </li>
+        `;
+      }).join("")}
+    </ul>
+  ` : `<div class="hint">Немає задач для цього статусу.</div>`;
+
+  showSheet(title, `
+    <div class="hint">Період: <span class="mono">${fmtDate(range.from)} — ${fmtDate(range.to)}</span></div>
+    <div class="sep"></div>
+    ${rows}
     <div class="sep"></div>
     <button class="btn primary" data-action="hideSheet">Закрити</button>
   `);
@@ -4678,11 +4753,27 @@ function toggleCtrlAlways(){
   }
 }
 function refreshRespOptions(){
-  const deptSel = document.getElementById("tDept");
   const respSel = document.getElementById("tResp");
-  if(!deptSel || !respSel || typeof createTaskUserOptions !== "function") return;
+  if(!respSel || typeof createTaskUserOptions !== "function") return;
 
+  const multi = [...document.querySelectorAll('input[name="tDeptMulti"]')];
+  if(multi.length){
+    const selected = multi.filter(x=>x.checked).map(x=>x.value);
+    if(selected.length === 1){
+      respSel.disabled = false;
+      const opts = createTaskUserOptions(selected[0]);
+      respSel.innerHTML = opts.map(x=>`<option value="${x.id}">${htmlesc(x.name)}</option>`).join("");
+    } else {
+      respSel.disabled = true;
+      respSel.innerHTML = `<option value="">Керівник відділу</option>`;
+    }
+    return;
+  }
+
+  const deptSel = document.getElementById("tDept");
+  if(!deptSel) return;
   const opts = createTaskUserOptions(deptSel.value);
+  respSel.disabled = false;
   respSel.innerHTML = opts.map(x=>`<option value="${x.id}">${htmlesc(x.name)}</option>`).join("");
 }
 
@@ -4705,6 +4796,7 @@ function openCreateTask(kind){
 
   const today = kyivDateStr();
   const isPersonal = (kind==="personal");
+  const isManagerial = (kind==="managerial");
 
   const deptOptions = isPersonal
     ? []
@@ -4716,6 +4808,45 @@ function openCreateTask(kind){
     return list;
   };
   createTaskUserOptions = userOptions;
+
+  const deptBlock = !isPersonal ? (
+    isManagerial ? `
+      <div class="field">
+        <label>Відділи</label>
+        <div class="dept-multi">
+          ${deptOptions.map(d=>`
+            <label class="check">
+              <input type="checkbox" name="tDeptMulti" value="${d.id}" data-change="refreshRespOptions" />
+              ${htmlesc(d.name)}
+            </label>
+          `).join("")}
+        </div>
+        <div class="hint">Можна обрати кілька відділів. Якщо кілька — відповідальні керівники відділів.</div>
+      </div>
+
+      <div class="field">
+        <label>Відповідальний</label>
+        <select id="tResp"></select>
+      </div>
+    ` : `
+      <div class="field">
+        <label>Відділ</label>
+        <select id="tDept" data-change="refreshRespOptions">
+          ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Відповідальний</label>
+        <select id="tResp"></select>
+      </div>
+    `
+  ) : `
+    <div class="field">
+      <label>Відповідальний</label>
+      <input value="Керівник (ви)" disabled />
+    </div>
+  `;
 
   showSheet(
     kind==="managerial" ? "Нова управлінська задача" :
@@ -4741,24 +4872,7 @@ function openCreateTask(kind){
       <textarea id="tDesc" placeholder="Деталі / очікуваний результат"></textarea>
     </div>
 
-    ${!isPersonal ? `
-      <div class="field">
-        <label>Відділ</label>
-        <select id="tDept" data-change="refreshRespOptions">
-          ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
-        </select>
-      </div>
-
-      <div class="field">
-        <label>Відповідальний</label>
-        <select id="tResp"></select>
-      </div>
-    ` : `
-      <div class="field">
-        <label>Відповідальний</label>
-        <input value="Керівник (ви)" disabled />
-      </div>
-    `}
+    ${deptBlock}
 
     <div class="row2">
       <div class="field">
@@ -4833,10 +4947,54 @@ function createTaskNow(kind){
 
   let departmentId = null;
   let responsibleUserId = "u_boss";
+  const pickResponsibleForDept = (deptId)=>{
+    const headId = effectiveDeptHeadUserId(deptId);
+    if(headId) return headId;
+    const opts = getDeptResponsibleOptions(deptId);
+    return opts[0]?.id || "u_boss";
+  };
 
   if(kind==="personal"){
     departmentId = null;
     responsibleUserId = "u_boss";
+  } else if(kind==="managerial"){
+    const multi = [...document.querySelectorAll('input[name="tDeptMulti"]')];
+    const selected = multi.filter(x=>x.checked).map(x=>x.value);
+    if(!selected.length){
+      showSheet("Помилка", `<div class="hint">Обери хоча б один відділ.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+      return;
+    }
+    if(selected.length === 1){
+      departmentId = selected[0];
+      responsibleUserId = document.getElementById("tResp").value;
+    } else {
+      selected.forEach((deptIdSel)=>{
+        const taskId = genTaskCode(idPrefix);
+        createTask({
+          id: taskId,
+          type,
+          title,
+          description: desc,
+          departmentId: deptIdSel,
+          responsibleUserId: pickResponsibleForDept(deptIdSel),
+          complexity: cx,
+          status,
+          startDate: today,
+          dueDate: due,
+          nextControlDate: ctrl,
+          controlAlways: ctrlAlways,
+          createdBy: u.id,
+          createdAt: nowIsoKyiv(),
+          updatedAt: nowIsoKyiv()
+        }, u.id);
+      });
+
+      hideSheet();
+      UI.tab = ROUTES.TASKS;
+      UI.taskFilter = "активні";
+      render();
+      return;
+    }
   } else {
     departmentId = document.getElementById("tDept").value;
     responsibleUserId = document.getElementById("tResp").value;
@@ -5799,6 +5957,7 @@ const ACTIONS = {
   openMissing,
   openReport,
   openReportForm,
+  openReportStatusTasks,
   openTasksExportDialog,
   openTask,
   openEditTask,
