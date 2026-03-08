@@ -4545,7 +4545,13 @@ function openEditTask(taskId){
     </div>
 
     <div class="field">
-      <label><input id="noDue" type="checkbox" data-change="toggleNoDue" ${noDue ? "checked" : ""} /> Без дедлайну</label>
+      <div class="toggle-row">
+        <span class="toggle-label">Без дедлайну</span>
+        <span class="switch">
+          <input id="noDue" type="checkbox" data-change="toggleNoDue" ${noDue ? "checked" : ""} />
+          <span class="slider"></span>
+        </span>
+      </div>
     </div>
 
     <div id="ctrlBlock">
@@ -4555,7 +4561,13 @@ function openEditTask(taskId){
           <input id="tCtrl" type="date" value="${t.nextControlDate ?? ""}" />
         </div>
         <div class="field">
-          <label><input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" ${t.controlAlways ? "checked" : ""} /> Постійний контроль (без дати)</label>
+          <div class="toggle-row">
+            <span class="toggle-label">Постійний контроль</span>
+            <span class="switch">
+              <input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" ${t.controlAlways ? "checked" : ""} />
+              <span class="slider"></span>
+            </span>
+          </div>
         </div>
       </div>
       <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
@@ -4827,51 +4839,101 @@ function openCreateTask(kind){
   };
   createTaskUserOptions = userOptions;
 
-  const deptBlock = !isPersonal ? (
-    isManagerial ? `
+  const metaBlock = `
+    <div class="task-meta-right">
       <div class="row2">
         <div class="field">
-          <label>Відділи</label>
-          <div class="dept-toggle-grid">
-            ${deptOptions.map(d=>`
-              <label class="dept-toggle">
-                <span class="dept-name">${htmlesc(d.name)}</span>
-                <span class="switch">
-                  <input type="checkbox" name="tDeptMulti" value="${d.id}" data-change="refreshRespOptions" />
-                  <span class="slider"></span>
-                </span>
-              </label>
-            `).join("")}
-          </div>
-          <div class="hint">Можна обрати кілька відділів. Якщо кілька — відповідальні керівники відділів.</div>
-        </div>
-
-        <div class="field">
-          <label>Відповідальний</label>
-          <select id="tResp"></select>
-        </div>
-      </div>
-    ` : `
-      <div class="row2">
-        <div class="field">
-          <label>Відділ</label>
-          <select id="tDept" data-change="refreshRespOptions">
-            ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
+          <label>Складність</label>
+          <select id="tCx">
+            <option value="легка">Легка</option>
+            <option value="середня" selected>Середня</option>
+            <option value="складна">Складна</option>
           </select>
         </div>
 
         <div class="field">
-          <label>Відповідальний</label>
-          <select id="tResp"></select>
+          <label>Дедлайн</label>
+          <div class="row" style="display:flex;gap:8px;">
+            <input id="tDue" type="date" value="${addDays(today, 3)}" />
+            <input id="tDueTime" type="time" value="" />
+          </div>
         </div>
       </div>
-    `
-  ) : `
-    <div class="field">
-      <label>Відповідальний</label>
-      <input value="Керівник (ви)" disabled />
+
+      <div class="field">
+        <div class="toggle-row">
+          <span class="toggle-label">Без дедлайну</span>
+          <span class="switch">
+            <input id="noDue" type="checkbox" data-change="toggleNoDue" />
+            <span class="slider"></span>
+          </span>
+        </div>
+      </div>
+
+      <div id="ctrlBlock">
+        <div class="row2">
+          <div class="field">
+            <label>Контрольна дата</label>
+            <input id="tCtrl" type="date" value="${addDays(today, 1)}" />
+          </div>
+          <div class="field">
+            <div class="toggle-row">
+              <span class="toggle-label">Постійний контроль</span>
+              <span class="switch">
+                <input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" />
+                <span class="slider"></span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
+      </div>
     </div>
   `;
+
+  const deptBlock = !isPersonal ? (
+    isManagerial ? `
+      <div class="task-meta-grid">
+        <div class="task-meta-left">
+          <div class="field">
+            <label>Відділи</label>
+            <div class="dept-toggle-grid">
+              ${deptOptions.map(d=>`
+                <label class="dept-toggle">
+                  <span class="dept-name">${htmlesc(d.name)}</span>
+                  <span class="switch">
+                    <input type="checkbox" name="tDeptMulti" value="${d.id}" data-change="refreshRespOptions" />
+                    <span class="slider"></span>
+                  </span>
+                </label>
+              `).join("")}
+            </div>
+            <div class="hint">Можна обрати кілька відділів. Якщо кілька — відповідальні керівники відділів.</div>
+          </div>
+        </div>
+        ${metaBlock}
+      </div>
+    ` : `
+      <div class="task-meta-grid">
+        <div class="task-meta-left">
+          <div class="row2">
+            <div class="field">
+              <label>Відділ</label>
+              <select id="tDept" data-change="refreshRespOptions">
+                ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Відповідальний</label>
+              <select id="tResp"></select>
+            </div>
+          </div>
+        </div>
+        ${metaBlock}
+      </div>
+    `
+  ) : metaBlock;
 
   showSheet(
     kind==="managerial" ? "Нова управлінська задача" :
@@ -4898,42 +4960,6 @@ function openCreateTask(kind){
     </div>
 
     ${deptBlock}
-
-    <div class="row2">
-      <div class="field">
-        <label>Складність</label>
-        <select id="tCx">
-          <option value="легка">Легка</option>
-          <option value="середня" selected>Середня</option>
-          <option value="складна">Складна</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label>Дедлайн</label>
-        <div class="row" style="display:flex;gap:8px;">
-          <input id="tDue" type="date" value="${addDays(today, 3)}" />
-          <input id="tDueTime" type="time" value="" />
-        </div>
-      </div>
-    </div>
-
-    <div class="field">
-      <label><input id="noDue" type="checkbox" data-change="toggleNoDue" /> Без дедлайну</label>
-    </div>
-
-    <div id="ctrlBlock">
-      <div class="row2">
-        <div class="field">
-          <label>Контрольна дата</label>
-          <input id="tCtrl" type="date" value="${addDays(today, 1)}" />
-        </div>
-        <div class="field">
-          <label><input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" /> Постійний контроль (без дати)</label>
-        </div>
-      </div>
-      <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
-    </div>
 
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="createTaskNow" data-arg1="${kind}">Створити</button>
@@ -4999,7 +5025,7 @@ function createTaskNow(kind){
     }
     if(selected.length === 1){
       departmentId = selected[0];
-      responsibleUserId = document.getElementById("tResp").value;
+      responsibleUserId = pickResponsibleForDept(selected[0]);
     } else {
       selected.forEach((deptIdSel)=>{
         const taskId = genTaskCode(idPrefix);
