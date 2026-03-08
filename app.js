@@ -282,6 +282,44 @@ function htmlesc(s){
     .replaceAll(">","&gt;").replaceAll('"',"&quot;")
     .replaceAll("'","&#039;");
 }
+function richText(s){
+  const safe = htmlesc(s ?? "");
+  if(!safe) return "";
+  let out = safe;
+  out = out.replace(/__(.+?)__/g, "<u>$1</u>");
+  out = out.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  out = out.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<i>$2</i>");
+  return out;
+}
+function formatToolbar(textareaId){
+  return `
+    <div class="format-chips" aria-label="Форматування тексту">
+      <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="bold" title="Жирний (**текст**)"><span class="format-ico">B</span></button>
+      <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="italic" title="Курсив (*текст*)"><span class="format-ico"><i>I</i></span></button>
+      <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="underline" title="Підкреслення (__текст__)"><span class="format-ico"><u>U</u></span></button>
+    </div>
+  `;
+}
+function applyTextFormat(textareaId, type){
+  const el = document.getElementById(textareaId);
+  if(!el) return;
+  const wrap = (type==="bold") ? "**" : (type==="italic" ? "*" : "__");
+  const start = el.selectionStart ?? 0;
+  const end = el.selectionEnd ?? 0;
+  const val = el.value || "";
+  if(start === end){
+    el.value = val.slice(0, start) + wrap + wrap + val.slice(end);
+    const caret = start + wrap.length;
+    el.focus();
+    el.setSelectionRange(caret, caret);
+  } else {
+    const selected = val.slice(start, end);
+    el.value = val.slice(0, start) + wrap + selected + wrap + val.slice(end);
+    el.focus();
+    el.setSelectionRange(start + wrap.length, end + wrap.length);
+  }
+  el.dispatchEvent(new Event("input", {bubbles:true}));
+}
 function fmtDate(d){
   if(!d) return "—";
   const [y,m,da] = d.split("T")[0].split("-");
@@ -4578,8 +4616,8 @@ function openTask(taskId){
       </div>
 
       ${meetingMeta ? `<div class="hint ann-meta">🗣 ${htmlesc(meetingMeta)}</div>` : ``}
-      ${(isAnn && t.audience==="meeting" && t.description) ? `<div class="hint"><b>Опис:</b> ${htmlesc(t.description)}</div>` : ``}
-      ${isAnn ? `` : `<div class="hint"><b>${descLabel}:</b> ${t.description ? htmlesc(t.description) : "—"}</div>`}
+      ${(isAnn && t.audience==="meeting" && t.description) ? `<div class="hint rich-text"><b>Опис:</b> ${richText(t.description)}</div>` : ``}
+      ${isAnn ? `` : `<div class="hint rich-text"><b>${descLabel}:</b> ${t.description ? richText(t.description) : "—"}</div>`}
       ${(!isAnn && isDone) ? `<div class="hint"><b>Результат:</b>${closeNote ? htmlesc(closeNote) : "—"}</div>` : ``}
 
       <details class="task-disclosure" ${upd.length ? "" : "open"}>
@@ -4677,6 +4715,7 @@ function openEditTask(taskId){
 
     <div class="field">
       <label>Опис (опційно)</label>
+      ${formatToolbar("tDesc")}
       <textarea id="tDesc">${htmlesc(t.description || "")}</textarea>
     </div>
 
@@ -5149,6 +5188,7 @@ function openCreateTask(kind){
 
     <div class="field">
       <label>Опис (опційно)</label>
+      ${formatToolbar("tDesc")}
       <textarea id="tDesc" placeholder="Деталі / очікуваний результат"></textarea>
     </div>
 
@@ -6277,6 +6317,7 @@ const ACTIONS = {
   logout,
   openAbout,
   openHelp,
+  applyTextFormat,
   openCreateTask,
   openCreateAnnouncement,
   openDelegationCreate,
