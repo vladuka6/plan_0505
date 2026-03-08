@@ -3629,7 +3629,7 @@ function viewTasks(){
     const rows = items.map((t,i)=>renderTaskItem(t, startIdx + i)).join("");
     return `
       <details class="done-toggle">
-        <summary>Задачі які виконані <span class="mono">${items.length}</span></summary>
+        <summary>ВИКОНАНІ ЗАДАЧІ <span class="mono">${items.length}</span></summary>
         <div class="done-list">${rows}</div>
       </details>
     `;
