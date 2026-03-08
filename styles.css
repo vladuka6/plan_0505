@@ -333,6 +333,7 @@
       align-items:center;
       justify-content:center;
       gap:8px;
+      white-space: nowrap;
       padding: 6px 10px;
       border-radius: 999px;
       font-size:11px;
@@ -341,6 +342,7 @@
       border:1px dashed rgba(150,170,205,.55);
       background: rgba(255,255,255,.75);
     }
+    .done-toggle summary .mono{display:inline-block;}
     .done-toggle summary::-webkit-details-marker{display:none;}
     .done-list{display:flex;flex-direction:column;gap:10px;margin-top:8px;}
     .announcement-block{display:flex;flex-direction:column;gap:12px;margin-bottom:12px;}
