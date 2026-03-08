@@ -4544,18 +4544,18 @@ function openEditTask(taskId){
       </div>
     </div>
 
-    <div class="field">
-      <div class="toggle-row">
-        <span class="toggle-label">Без дедлайну</span>
-        <span class="switch">
-          <input id="noDue" type="checkbox" data-change="toggleNoDue" ${noDue ? "checked" : ""} />
-          <span class="slider"></span>
-        </span>
+    <div class="row3">
+      <div class="field">
+        <div class="toggle-row">
+          <span class="toggle-label">Без дедлайну</span>
+          <label class="switch">
+            <input id="noDue" type="checkbox" data-change="toggleNoDue" ${noDue ? "checked" : ""} />
+            <span class="slider"></span>
+          </label>
+        </div>
       </div>
-    </div>
 
-    <div id="ctrlBlock">
-      <div class="row2">
+      <div id="ctrlBlock" class="ctrl-inline">
         <div class="field">
           <label>Контрольна дата</label>
           <input id="tCtrl" type="date" value="${t.nextControlDate ?? ""}" />
@@ -4563,15 +4563,15 @@ function openEditTask(taskId){
         <div class="field">
           <div class="toggle-row">
             <span class="toggle-label">Постійний контроль</span>
-            <span class="switch">
+            <label class="switch">
               <input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" ${t.controlAlways ? "checked" : ""} />
               <span class="slider"></span>
-            </span>
+            </label>
           </div>
         </div>
       </div>
-      <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
     </div>
+    <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
 
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="saveTaskEdits" data-arg1="${t.id}">Зберегти</button>
@@ -4768,11 +4768,24 @@ function toggleCtrlAlways(){
     ctrl.value = (ctrl.id === "tCtrl") ? addDays(kyivDateStr(), 1) : kyivDateStr();
   }
 }
+let _deptAllSync = false;
 function refreshRespOptions(){
+  const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
+  const allToggle = document.querySelector('input[name="tDeptAll"]');
+  if(allToggle && allToggle.checked){
+    if(_deptAllSync){
+      // if "All" was just toggled on, select every dept
+      multiToggles.forEach(t=>{ t.checked = true; });
+    } else if(multiToggles.some(t=>!t.checked)){
+      // user turned off a dept while "All" was on
+      allToggle.checked = false;
+    }
+  }
+  _deptAllSync = false;
+
   const respSel = document.getElementById("tResp");
   if(!respSel || typeof createTaskUserOptions !== "function") return;
 
-  const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
   if(multiToggles.length){
     const selected = multiToggles.filter(x=>x.checked).map(x=>x.value);
     if(selected.length === 1){
@@ -4805,6 +4818,17 @@ function refreshRespOptions(){
   const opts = createTaskUserOptions(deptSel.value);
   respSel.disabled = false;
   respSel.innerHTML = opts.map(x=>`<option value="${x.id}">${htmlesc(x.name)}</option>`).join("");
+}
+
+function toggleDeptAll(){
+  const allToggle = document.querySelector('input[name="tDeptAll"]');
+  const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
+  if(!allToggle || !multiToggles.length) return;
+  if(allToggle.checked){
+    _deptAllSync = true;
+    multiToggles.forEach(t=>{ t.checked = true; });
+  }
+  refreshRespOptions();
 }
 
 function openCreateTask(kind){
@@ -4860,18 +4884,18 @@ function openCreateTask(kind){
         </div>
       </div>
 
-      <div class="field">
-        <div class="toggle-row">
-          <span class="toggle-label">Без дедлайну</span>
-          <span class="switch">
-            <input id="noDue" type="checkbox" data-change="toggleNoDue" />
-            <span class="slider"></span>
-          </span>
+      <div class="row3">
+        <div class="field">
+          <div class="toggle-row">
+            <span class="toggle-label">Без дедлайну</span>
+            <label class="switch">
+              <input id="noDue" type="checkbox" data-change="toggleNoDue" />
+              <span class="slider"></span>
+            </label>
+          </div>
         </div>
-      </div>
 
-      <div id="ctrlBlock">
-        <div class="row2">
+        <div id="ctrlBlock" class="ctrl-inline">
           <div class="field">
             <label>Контрольна дата</label>
             <input id="tCtrl" type="date" value="${addDays(today, 1)}" />
@@ -4879,15 +4903,15 @@ function openCreateTask(kind){
           <div class="field">
             <div class="toggle-row">
               <span class="toggle-label">Постійний контроль</span>
-              <span class="switch">
+              <label class="switch">
                 <input id="tCtrlAlways" type="checkbox" data-change="toggleCtrlAlways" />
                 <span class="slider"></span>
-              </span>
+              </label>
             </div>
           </div>
         </div>
-        <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
       </div>
+      <div class="hint">Контроль використовується тільки якщо немає дедлайну.</div>
     </div>
   `;
 
@@ -4896,12 +4920,19 @@ function openCreateTask(kind){
       <div class="task-meta-grid">
         <div class="task-meta-left">
           <div class="field">
-            <label>Відділи</label>
-            <div class="dept-toggle-grid">
-              ${deptOptions.map(d=>`
-                <label class="dept-toggle">
-                  <span class="dept-name">${htmlesc(d.name)}</span>
-                  <span class="switch">
+          <label>Відділи</label>
+          <div class="dept-toggle-grid">
+            <label class="dept-toggle dept-toggle-all">
+              <span class="dept-name">Всі</span>
+              <span class="switch">
+                <input type="checkbox" name="tDeptAll" data-change="toggleDeptAll" />
+                <span class="slider"></span>
+              </span>
+            </label>
+            ${deptOptions.map(d=>`
+              <label class="dept-toggle">
+                <span class="dept-name">${htmlesc(d.name)}</span>
+                <span class="switch">
                     <input type="checkbox" name="tDeptMulti" value="${d.id}" data-change="refreshRespOptions" />
                     <span class="slider"></span>
                   </span>
@@ -6145,6 +6176,7 @@ const CHANGE_ACTIONS = {
   setReportsControlDateFromInput,
   toggleNoDue,
   toggleCtrlAlways,
+  toggleDeptAll,
 };
 
 const READONLY_BLOCKED_ACTIONS = new Set([

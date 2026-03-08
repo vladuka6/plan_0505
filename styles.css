@@ -440,6 +440,10 @@
       background: rgba(255,255,255,.78);
       font-size:12px;
     }
+    .dept-toggle-all{
+      border-color: rgba(110,168,254,.55);
+      background: rgba(110,168,254,.12);
+    }
     .dept-name{font-weight:900;color:var(--text);line-height:1.2;word-break:break-word;flex:1;min-width:0;}
     .switch{
       position:relative;
@@ -492,6 +496,13 @@
       align-items:start;
     }
     .task-meta-right{display:flex;flex-direction:column;gap:8px;}
+    .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:center;}
+    .ctrl-inline{display:contents;}
+    #ctrlBlock.disabled > .field{
+      opacity:.55;
+      pointer-events:none;
+      filter:saturate(.6);
+    }
     @media (max-width: 900px){
       .task-meta-grid{grid-template-columns:1fr;}
     }
