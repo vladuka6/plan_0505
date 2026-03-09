@@ -1062,6 +1062,14 @@
       .task-line .task-meta{
         flex-wrap:nowrap;
       }
+      .dept-list{
+        display:grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap:10px;
+      }
+      .dept-list .task-item{
+        height:100%;
+      }
     }
 
     @media (min-width: 980px){
