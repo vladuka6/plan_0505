@@ -1518,6 +1518,12 @@
       background: rgba(21,25,37,.95);
       color: var(--text);
     }
+    @media (min-width: 900px){
+      .task-search{
+        max-width:280px;
+        width:clamp(200px, 20vw, 280px);
+      }
+    }
     body.theme-dark .toast.toast-ok{
       border-color: rgba(69,230,154,.45);
       background: rgba(69,230,154,.18);
