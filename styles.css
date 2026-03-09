@@ -122,6 +122,23 @@
     }
     .card-h .t{font-weight:900;font-size: 14px;}
     .card-actions{display:flex;align-items:center;gap:8px;}
+    .card-h.task-head{
+      flex-direction:column;
+      align-items:stretch;
+    }
+    .card-h.task-head .card-h-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .card-h.task-head .task-head-tools{
+      align-items:flex-start;
+    }
+    .card-h.task-head .task-filters{
+      flex:1;
+      min-width:0;
+    }
     .card-b{ padding: 14px; }
 
     .statlist{display:flex;flex-direction:column;gap:10px;}
@@ -1195,6 +1212,16 @@
       display:grid;
       grid-template-columns: 1.35fr .85fr;
       gap:12px;
+    }
+    @media (max-width: 900px){
+      .card-h.task-head .card-h-row{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .card-h.task-head .card-actions{
+        justify-content:flex-start;
+        flex-wrap:wrap;
+      }
     }
     .hero-card{
       position:relative;

@@ -3779,7 +3779,6 @@ function viewTasks(){
     </div>
   `;
   const searchBlock = searchUi ? `<div class="task-search">${searchUi}</div>` : ``;
-  const toolbarClass = searchUi ? "task-toolbar" : "task-toolbar no-search";
   const showTasks = effectivePersonalFilter!=="announcements";
   const showAnns = showAnnouncementsScope && effectivePersonalFilter!=="tasks";
   const annDisplay = (filter==="активні") ? announcementsActive : announcementsFiltered;
@@ -4078,24 +4077,28 @@ function viewTasks(){
 
   const body = `
     <div class="card">
-      <div class="card-h">
-        <div class="t">Задачі</div>
-        <div style="display:flex;align-items:center;gap:8px;">
+      <div class="card-h task-head">
+        <div class="card-h-row">
+          <div class="t">Задачі</div>
+          <div class="card-actions">
           ${u.role==="boss" ? `<button class="btn ghost" data-action="openTasksExportDialog">⬇️ Excel</button>` : ``}
           ${announcementBtn}
           ${u.role==="boss" ? `<button class="btn ghost" data-action="toggleTaskScope">${UI.taskDeptFilter==="personal" ? "Мої" : "Всі"}</button>` : `<span class="badge b-blue">Мій відділ</span>`}
+          </div>
         </div>
-      </div>
-      <div class="card-b">
-        <div class="task-toolbar-sticky">
-          <div class="${toolbarClass}">
+        ${(statusChips || personalChips || searchBlock) ? `
+          <div class="card-h-row task-head-tools">
             <div class="task-filters">
-              ${deptChips}
               ${statusChips}
               ${personalChips}
             </div>
             ${searchBlock}
           </div>
+        ` : ``}
+      </div>
+      <div class="card-b">
+        <div class="task-toolbar-sticky">
+          ${deptChips}
           ${searchHint}
         </div>
         <div class="list">${list}</div>
