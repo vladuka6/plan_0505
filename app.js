@@ -3755,13 +3755,13 @@ function viewTasks(){
     </div>
   ` : ``;
   const deptChips = (u.role==="boss" && !isPersonalScope) ? `
-    <div class="chips dept-chips task-chips dept-primary">
+    <div class="chips dept-chips dept-segments">
       ${STATE.departments.map(d=>{
         const active = deptFilter===d.id ? "active" : "";
         return `
           <div class="chip ${active}" data-action="setTaskDeptFilter" data-arg1="${d.id}">
-            ${deptBadgeHtml(d)}
-            <button class="dept-report-btn" data-action="openDeptAnalytics" data-arg1="${d.id}" data-arg2="week" title="Звіт відділу">
+            <span class="dept-label" title="${htmlesc(d.name)}">${htmlesc(deptShortLabel(d))}</span>
+            <button class="dept-report-btn mini" data-action="openDeptAnalytics" data-arg1="${d.id}" data-arg2="week" title="Звіт відділу">
               <span class="dr-ico">📊</span>
             </button>
           </div>
