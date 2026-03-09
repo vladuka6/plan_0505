@@ -3736,7 +3736,7 @@ function viewTasks(){
     .filter(t=>t.status==="закрито"));
 
   const chips = `
-    <div class="chips task-chips">
+    <div class="chips task-chips status-chips">
       <div class="chip ${filter==="активні"?"active":""}" data-action="setTaskFilter" data-arg1="активні"><span class="chip-ico">📌</span><span class="chip-text">Активні</span></div>
       <div class="chip ${filter==="очікує_підтвердження"?"active":""}" data-action="setTaskFilter" data-arg1="очікує_підтвердження"><span class="chip-ico">🟣</span><span class="chip-text">Очікує підтвердження</span></div>
       <div class="chip ${filter==="прострочені"?"active":""}" data-action="setTaskFilter" data-arg1="прострочені"><span class="chip-ico">🟠</span><span class="chip-text">Прострочені</span></div>
@@ -3755,7 +3755,7 @@ function viewTasks(){
     </div>
   ` : ``;
   const deptChips = (u.role==="boss" && !isPersonalScope) ? `
-    <div class="chips dept-chips task-chips">
+    <div class="chips dept-chips task-chips dept-primary">
       ${STATE.departments.map(d=>{
         const active = deptFilter===d.id ? "active" : "";
         return `
@@ -3769,9 +3769,6 @@ function viewTasks(){
       }).join("")}
     </div>
   ` : ``;
-  const filterRow = (statusChips || deptChips)
-    ? `<div class="task-filter-row">${statusChips}${deptChips}</div>`
-    : "";
   const searchUi = isPersonalScope ? "" : `
     <div class="field search-inline">
       <label>Пошук задач / оголошень</label>
@@ -4093,7 +4090,8 @@ function viewTasks(){
         <div class="task-toolbar-sticky">
           <div class="${toolbarClass}">
             <div class="task-filters">
-              ${filterRow}
+              ${deptChips}
+              ${statusChips}
               ${personalChips}
             </div>
             ${searchBlock}

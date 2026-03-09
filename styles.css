@@ -156,12 +156,31 @@
       background: rgba(235,242,255,.55);
       gap:6px;
     }
+    .chips.task-chips.status-chips{
+      background: rgba(245,248,255,.6);
+      border-color: rgba(150,170,205,.35);
+    }
+    .chips.dept-chips.dept-primary{
+      background: rgba(110,168,254,.10);
+      border-color: rgba(110,168,254,.35);
+      box-shadow: 0 6px 14px rgba(45,95,189,.08);
+    }
     .chips.task-chips .chip{
       height: 32px;
       padding: 0 10px;
       font-size: 11px;
       background: rgba(255,255,255,.75);
       border-color: rgba(150,170,205,.4);
+    }
+    .chips.dept-chips.dept-primary .chip{
+      height: 34px;
+      font-size: 12px;
+      background: rgba(255,255,255,.9);
+    }
+    .chips.task-chips.status-chips .chip{
+      height: 28px;
+      font-size: 11px;
+      padding: 0 8px;
     }
     .dept-report-btn{
       margin-left:6px;
@@ -204,20 +223,6 @@
     }
     .task-toolbar.no-search{grid-template-columns:1fr;}
     .task-filters{display:flex;flex-direction:column;gap:6px;min-width:0;}
-    .task-filter-row{
-      display:flex;
-      align-items:center;
-      gap:8px;
-      flex-wrap:nowrap;
-      overflow:auto;
-      padding-bottom: 4px;
-      -webkit-overflow-scrolling: touch;
-    }
-    .task-filter-row .chips{
-      overflow:visible;
-      padding-bottom:0;
-      flex:0 0 auto;
-    }
     .task-search{
       min-width:220px;
       max-width:420px;
@@ -1081,7 +1086,6 @@
       }
       .chips.dept-chips .chip{justify-content:center;min-width:44px;}
       .chips.dept-chips .chip .mono{display:none;}
-      .task-filter-row{overflow:auto;}
       .control-counts{display:none;}
       .control-lines{flex-direction:row;flex-wrap:wrap;gap:8px;}
       .control-grid{grid-template-columns:1fr;}
@@ -1517,12 +1521,6 @@
       border-color: rgba(35,42,58,.75);
       background: rgba(21,25,37,.95);
       color: var(--text);
-    }
-    @media (min-width: 900px){
-      .task-search{
-        max-width:280px;
-        width:clamp(200px, 20vw, 280px);
-      }
     }
     body.theme-dark .toast.toast-ok{
       border-color: rgba(69,230,154,.45);
