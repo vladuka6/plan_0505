@@ -13,7 +13,7 @@
       --shadow: 0 10px 24px rgba(54,78,127,.14);
       --radius: 18px;
       --radius2: 14px;
-      --max: 980px;
+      --max: 100%;
     }
     *{box-sizing:border-box}
     body{
@@ -28,6 +28,7 @@
     }
     .app{
       max-width: var(--max);
+      width: 100%;
       margin: 0 auto;
       padding-bottom: calc(84px + env(safe-area-inset-bottom));
     }
