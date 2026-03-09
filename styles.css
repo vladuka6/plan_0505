@@ -1081,6 +1081,7 @@
       }
       .chips.dept-chips .chip{justify-content:center;min-width:44px;}
       .chips.dept-chips .chip .mono{display:none;}
+      .task-filter-row{overflow:auto;}
       .control-counts{display:none;}
       .control-lines{flex-direction:row;flex-wrap:wrap;gap:8px;}
       .control-grid{grid-template-columns:1fr;}
