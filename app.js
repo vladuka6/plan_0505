@@ -4989,7 +4989,7 @@ function saveTaskEdits(taskId){
     return;
   }
 
-  const desc = document.getElementById("tDesc").value.trim();
+  const desc = document.getElementById("tDesc").value || "";
   const cx = document.getElementById("tCx").value;
   const noDue = document.getElementById("noDue").checked;
   const dueDateVal = document.getElementById("tDue").value || null;
@@ -5392,7 +5392,7 @@ function createTaskNow(kind){
     showSheet("Помилка", `<div class="hint">Вкажи назву задачі.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
-  const desc = document.getElementById("tDesc").value.trim();
+  const desc = document.getElementById("tDesc").value || "";
   const cx = document.getElementById("tCx").value;
   const noDue = document.getElementById("noDue").checked;
   const ctrlAlways = noDue ? !!document.getElementById("tCtrlAlways")?.checked : false;
