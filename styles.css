@@ -204,6 +204,20 @@
     }
     .task-toolbar.no-search{grid-template-columns:1fr;}
     .task-filters{display:flex;flex-direction:column;gap:6px;min-width:0;}
+    .task-filter-row{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:nowrap;
+      overflow:auto;
+      padding-bottom: 4px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .task-filter-row .chips{
+      overflow:visible;
+      padding-bottom:0;
+      flex:0 0 auto;
+    }
     .task-search{
       min-width:220px;
       max-width:420px;

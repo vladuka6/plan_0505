@@ -3769,6 +3769,9 @@ function viewTasks(){
       }).join("")}
     </div>
   ` : ``;
+  const filterRow = (statusChips || deptChips)
+    ? `<div class="task-filter-row">${statusChips}${deptChips}</div>`
+    : "";
   const searchUi = isPersonalScope ? "" : `
     <div class="field search-inline">
       <label>Пошук задач / оголошень</label>
@@ -4090,12 +4093,11 @@ function viewTasks(){
         <div class="task-toolbar-sticky">
           <div class="${toolbarClass}">
             <div class="task-filters">
-              ${statusChips}
+              ${filterRow}
               ${personalChips}
             </div>
             ${searchBlock}
           </div>
-          ${deptChips}
           ${searchHint}
         </div>
         <div class="list">${list}</div>
