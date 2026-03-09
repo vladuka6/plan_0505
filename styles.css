@@ -905,10 +905,10 @@
       color: var(--muted);
       margin-top:4px;
       display:none;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      max-width:520px;
+      white-space:normal;
+      overflow:visible;
+      text-overflow:clip;
+      max-width:100%;
     }
     .task-search-meta{
       font-size:12px;
