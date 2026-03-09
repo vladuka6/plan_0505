@@ -905,10 +905,11 @@
       color: var(--muted);
       margin-top:4px;
       display:none;
-      white-space:normal;
+      white-space:pre-wrap;
       overflow:visible;
       text-overflow:clip;
       max-width:100%;
+      word-break: break-word;
     }
     .task-search-meta{
       font-size:12px;
