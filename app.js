@@ -3861,10 +3861,11 @@ function viewTasks(){
     const isDueTodayTask = isDueToday(t) && !isLate;
     const isDone = t.status==="закрито";
     const hideStatus = isAnn || isDone || (t.status==="в_процесі" && !t.dueDate && (t.controlAlways || t.nextControlDate));
-    const desc = (t.description || "").trim();
+    const descRaw = (t.description || "");
+    const hasDesc = descRaw.trim().length > 0;
     const descLabel = isAnn ? "Текст" : "Опис";
-    const descHtml = (!isAnn && desc) ? `<div class="task-desc rich-text">${descLabel}: ${richText(desc)}</div>` : "";
-    const annDesc = (isAnn && t.audience==="meeting" && desc) ? `<div class="task-desc rich-text">Опис: ${richText(desc)}</div>` : "";
+    const descHtml = (!isAnn && hasDesc) ? `<div class="task-desc rich-text">${descLabel}: ${richText(descRaw)}</div>` : "";
+    const annDesc = (isAnn && t.audience==="meeting" && hasDesc) ? `<div class="task-desc rich-text">Опис: ${richText(descRaw)}</div>` : "";
     const closeUpd = isDone ? getCloseUpdate(t) : null;
     const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
     const closeShort = isDone ? closeDisplay(closeAt) : "";
