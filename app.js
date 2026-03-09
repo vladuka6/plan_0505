@@ -3864,8 +3864,10 @@ function viewTasks(){
     const descRaw = (t.description || "");
     const hasDesc = descRaw.trim().length > 0;
     const descLabel = isAnn ? "Текст" : "Опис";
-    const descHtml = (!isAnn && hasDesc) ? `<div class="task-desc rich-text">${descLabel}: ${richText(descRaw)}</div>` : "";
-    const annDesc = (isAnn && t.audience==="meeting" && hasDesc) ? `<div class="task-desc rich-text">Опис: ${richText(descRaw)}</div>` : "";
+    const descStartsWithBreak = /^\s*\r?\n/.test(descRaw);
+    const descPrefix = descStartsWithBreak ? `${descLabel}:<br/>` : `${descLabel}: `;
+    const descHtml = (!isAnn && hasDesc) ? `<div class="task-desc rich-text">${descPrefix}${richText(descRaw)}</div>` : "";
+    const annDesc = (isAnn && t.audience==="meeting" && hasDesc) ? `<div class="task-desc rich-text">Опис:${descStartsWithBreak ? "<br/>" : " "}${richText(descRaw)}</div>` : "";
     const closeUpd = isDone ? getCloseUpdate(t) : null;
     const closeAt = isDone ? (closeUpd?.at || t.updatedAt || "") : "";
     const closeShort = isDone ? closeDisplay(closeAt) : "";
