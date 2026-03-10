@@ -5408,26 +5408,33 @@ function openCreateTask(kind){
       <details class="recurring-block">
         <summary>Повторення</summary>
         <div class="field">
-          <label class="check">
-            <input id="recEnabled" type="checkbox" data-change="toggleRecurrenceEnabled" />
-            Повторювана задача
-          </label>
+          <div class="toggle-row">
+            <span class="toggle-label">Повторювана задача</span>
+            <label class="switch">
+              <input id="recEnabled" type="checkbox" data-change="toggleRecurrenceEnabled" />
+              <span class="slider"></span>
+            </label>
+          </div>
         </div>
         <div id="recBody" class="rec-body disabled">
-          <div class="row2">
-            <div class="field">
-              <label>Тип</label>
-              <select id="recType" data-change="toggleRecurrenceType">
-                <option value="weekly">Щотижня</option>
-                <option value="monthly">Щомісяця</option>
-              </select>
-            </div>
+          <div class="rec-type-row">
+            <label class="rec-type-pill">
+              <input type="radio" name="recType" value="weekly" checked data-change="toggleRecurrenceType" />
+              <span>Щотижня</span>
+            </label>
+            <label class="rec-type-pill">
+              <input type="radio" name="recType" value="monthly" data-change="toggleRecurrenceType" />
+              <span>Щомісяця</span>
+            </label>
           </div>
-          <div id="recWeekly" class="rec-grid">
+          <div id="recWeekly" class="rec-toggle-grid">
             ${days.map(d=>`
-              <label class="rec-pill">
-                <input type="checkbox" name="recDay" value="${d.v}" />
-                <span>${d.label}</span>
+              <label class="rec-toggle">
+                <span class="rec-label">${d.label}</span>
+                <span class="switch">
+                  <input type="checkbox" name="recDay" value="${d.v}" />
+                  <span class="slider"></span>
+                </span>
               </label>
             `).join("")}
           </div>
@@ -5485,11 +5492,15 @@ function toggleRecurrenceEnabled(){
   if(block) block.classList.toggle("disabled", !enabled);
 }
 function toggleRecurrenceType(){
-  const type = document.getElementById("recType")?.value || "weekly";
+  const type = document.querySelector('input[name="recType"]:checked')?.value || "weekly";
   const weekly = document.getElementById("recWeekly");
   const monthly = document.getElementById("recMonthly");
   if(weekly) weekly.style.display = (type === "weekly") ? "block" : "none";
   if(monthly) monthly.style.display = (type === "monthly") ? "block" : "none";
+  document.querySelectorAll(".rec-type-pill").forEach(el=>{
+    const val = el.querySelector('input')?.value;
+    el.classList.toggle("active", val === type);
+  });
 }
 
 function createTaskNow(kind){
@@ -5531,7 +5542,7 @@ function createTaskNow(kind){
   };
   let schedule = null;
   if(recEnabled){
-    const recType = document.getElementById("recType")?.value || "weekly";
+    const recType = document.querySelector('input[name="recType"]:checked')?.value || "weekly";
     if(recType === "weekly"){
       const days = [...document.querySelectorAll('input[name="recDay"]:checked')]
         .map(x=>Number(x.value))
