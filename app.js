@@ -112,6 +112,7 @@ function migrateState(st){
     dailyReports: Array.isArray(st.dailyReports) ? st.dailyReports : [],
     deptSummaries: Array.isArray(st.deptSummaries) ? st.deptSummaries : [],
     weeklyTasks: Array.isArray(st.weeklyTasks) ? st.weeklyTasks : [],
+    recurringTemplates: Array.isArray(st.recurringTemplates) ? st.recurringTemplates : [],
     sync: (st.sync && typeof st.sync === "object") ? st.sync : null,
   };
   if(Array.isArray(next.users)){
@@ -301,6 +302,47 @@ function setWeeklyWeekIndexFromSelect(){
   UI.weeklyAnchorDate = weeks[Math.max(0, Math.min(w, weeks.length) - 1)] || kyivDateStr();
   render();
 }
+function recurringMatchesToday(tpl, today){
+  if(!tpl || !tpl.schedule) return false;
+  if(tpl.lastGenerated === today) return false;
+  if(tpl.schedule.type === "weekly"){
+    const day = new Date(today + "T12:00:00").getDay();
+    return Array.isArray(tpl.schedule.days) && tpl.schedule.days.includes(day);
+  }
+  if(tpl.schedule.type === "monthly"){
+    const day = Number(today.slice(8,10));
+    return Array.isArray(tpl.schedule.dates) && tpl.schedule.dates.includes(day);
+  }
+  return false;
+}
+function runRecurringTemplates(){
+  if(!STATE.recurringTemplates) STATE.recurringTemplates = [];
+  const today = kyivDateStr();
+  STATE.recurringTemplates.forEach(tpl=>{
+    if(!recurringMatchesToday(tpl, today)) return;
+    tpl.lastGenerated = today;
+    const dueDate = tpl.noDue ? null : today;
+    const controlAlways = tpl.noDue ? !!tpl.controlAlways : false;
+    const nextControlDate = (tpl.noDue && !controlAlways) ? (tpl.nextControlDate || null) : null;
+    createTask({
+      id: genTaskCode((tpl.type==="managerial") ? "T" : (tpl.type==="internal" ? "I" : "P")),
+      type: tpl.type,
+      title: tpl.title,
+      description: tpl.description || "",
+      departmentId: tpl.departmentId || null,
+      responsibleUserId: tpl.responsibleUserId || "u_boss",
+      complexity: tpl.complexity || "середня",
+      status: "в_процесі",
+      startDate: today,
+      dueDate,
+      nextControlDate,
+      controlAlways,
+      createdBy: tpl.createdBy || "u_boss",
+      createdAt: nowIsoKyiv(),
+      updatedAt: nowIsoKyiv(),
+    }, tpl.createdBy || "u_boss");
+  });
+}
 function monthRangeFor(dateStr){
   const [y,m] = dateStr.split("-").map(Number);
   const from = `${y}-${String(m).padStart(2,'0')}-01`;
@@ -339,6 +381,7 @@ function seed(){
     dailyReports: [],
     deptSummaries: [],
     weeklyTasks: [],
+    recurringTemplates: [],
   };
   saveState(st);
   return st;
@@ -5351,6 +5394,52 @@ function openCreateTask(kind){
     `
   ) : metaBlock;
 
+  const recurringBlock = (u.role==="boss" && !u.readOnly) ? (()=>{
+    const days = [
+      {v:1, label:"Пн"},
+      {v:2, label:"Вт"},
+      {v:3, label:"Ср"},
+      {v:4, label:"Чт"},
+      {v:5, label:"Пт"},
+      {v:6, label:"Сб"},
+      {v:0, label:"Нд"},
+    ];
+    return `
+      <details class="recurring-block">
+        <summary>Повторення</summary>
+        <div class="field">
+          <label class="check">
+            <input id="recEnabled" type="checkbox" data-change="toggleRecurrenceEnabled" />
+            Повторювана задача
+          </label>
+        </div>
+        <div id="recBody" class="rec-body disabled">
+          <div class="row2">
+            <div class="field">
+              <label>Тип</label>
+              <select id="recType" data-change="toggleRecurrenceType">
+                <option value="weekly">Щотижня</option>
+                <option value="monthly">Щомісяця</option>
+              </select>
+            </div>
+          </div>
+          <div id="recWeekly" class="rec-grid">
+            ${days.map(d=>`
+              <label class="rec-pill">
+                <input type="checkbox" name="recDay" value="${d.v}" />
+                <span>${d.label}</span>
+              </label>
+            `).join("")}
+          </div>
+          <div id="recMonthly" class="field" style="display:none;">
+            <label>Дати місяця (через кому)</label>
+            <input id="recDates" placeholder="5, 15" />
+          </div>
+        </div>
+      </details>
+    `;
+  })() : "";
+
   showSheet(
     kind==="managerial" ? "Нова управлінська задача" :
     kind==="internal" ? "Нова внутрішня задача" :
@@ -5369,6 +5458,8 @@ function openCreateTask(kind){
       <textarea id="tDesc" placeholder="Деталі / очікуваний результат"></textarea>
     </div>
 
+    ${recurringBlock}
+
     ${deptBlock}
 
     <div class="actions" style="margin-top:14px;">
@@ -5378,6 +5469,8 @@ function openCreateTask(kind){
   `);
 
   toggleNoDue();
+  toggleRecurrenceEnabled();
+  toggleRecurrenceType();
   if(!isPersonal){
     const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
     if(multiToggles.length && !multiToggles.some(x=>x.checked)){
@@ -5385,6 +5478,18 @@ function openCreateTask(kind){
     }
     refreshRespOptions();
   }
+}
+function toggleRecurrenceEnabled(){
+  const enabled = document.getElementById("recEnabled")?.checked;
+  const block = document.getElementById("recBody");
+  if(block) block.classList.toggle("disabled", !enabled);
+}
+function toggleRecurrenceType(){
+  const type = document.getElementById("recType")?.value || "weekly";
+  const weekly = document.getElementById("recWeekly");
+  const monthly = document.getElementById("recMonthly");
+  if(weekly) weekly.style.display = (type === "weekly") ? "block" : "none";
+  if(monthly) monthly.style.display = (type === "monthly") ? "block" : "none";
 }
 
 function createTaskNow(kind){
@@ -5402,8 +5507,9 @@ function createTaskNow(kind){
   const dueTimeVal = document.getElementById("tDueTime")?.value || "";
   const due = noDue ? null : joinDateTime(dueDateVal, dueTimeVal);
   const ctrl = (noDue && !ctrlAlways) ? (document.getElementById("tCtrl").value || null) : null;
+  const recEnabled = !!document.getElementById("recEnabled")?.checked;
 
-  if(!noDue && !dueDateVal){
+  if(!recEnabled && !noDue && !dueDateVal){
     showSheet("Помилка", `<div class="hint">Вкажи дедлайн або вибери “Без дедлайну”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
@@ -5423,6 +5529,29 @@ function createTaskNow(kind){
     const opts = getDeptResponsibleOptions(deptId);
     return opts[0]?.id || "u_boss";
   };
+  let schedule = null;
+  if(recEnabled){
+    const recType = document.getElementById("recType")?.value || "weekly";
+    if(recType === "weekly"){
+      const days = [...document.querySelectorAll('input[name="recDay"]:checked')]
+        .map(x=>Number(x.value))
+        .filter(n=>Number.isFinite(n));
+      if(!days.length){
+        showSheet("Помилка", `<div class="hint">Обери дні тижня.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+        return;
+      }
+      schedule = {type:"weekly", days: [...new Set(days)]};
+    } else {
+      const raw = (document.getElementById("recDates")?.value || "");
+      const dates = raw.split(/[\s,;]+/).map(x=>Number(x)).filter(n=>n>=1 && n<=31);
+      const unique = [...new Set(dates)];
+      if(!unique.length){
+        showSheet("Помилка", `<div class="hint">Вкажи дати місяця (наприклад: 5, 15).</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+        return;
+      }
+      schedule = {type:"monthly", dates: unique};
+    }
+  }
 
   if(kind==="personal"){
     departmentId = null;
@@ -5438,6 +5567,55 @@ function createTaskNow(kind){
       departmentId = selected[0];
       responsibleUserId = pickResponsibleForDept(selected[0]);
     } else {
+      if(recEnabled){
+        if(!STATE.recurringTemplates) STATE.recurringTemplates = [];
+        selected.forEach((deptIdSel)=>{
+          const tpl = {
+            id: uid("rt"),
+            type,
+            title,
+            description: desc,
+            departmentId: deptIdSel,
+            responsibleUserId: pickResponsibleForDept(deptIdSel),
+            complexity: cx,
+            noDue,
+            controlAlways: noDue ? !!ctrlAlways : false,
+            nextControlDate: (noDue && !ctrlAlways) ? ctrl : null,
+            schedule,
+            createdBy: u.id,
+            createdAt: nowIsoKyiv(),
+            lastGenerated: null,
+          };
+          STATE.recurringTemplates.push(tpl);
+          if(recurringMatchesToday(tpl, today)){
+            tpl.lastGenerated = today;
+            createTask({
+              id: genTaskCode(idPrefix),
+              type,
+              title,
+              description: desc,
+              departmentId: deptIdSel,
+              responsibleUserId: pickResponsibleForDept(deptIdSel),
+              complexity: cx,
+              status,
+              startDate: today,
+              dueDate: noDue ? null : today,
+              nextControlDate: (noDue && !ctrlAlways) ? ctrl : null,
+              controlAlways: noDue ? !!ctrlAlways : false,
+              createdBy: u.id,
+              createdAt: nowIsoKyiv(),
+              updatedAt: nowIsoKyiv()
+            }, u.id);
+          }
+        });
+        saveState(STATE);
+        hideSheet();
+        UI.tab = ROUTES.TASKS;
+        UI.taskFilter = "активні";
+        render();
+        showToast("Шаблони створено", "ok");
+        return;
+      }
       selected.forEach((deptIdSel)=>{
         const taskId = genTaskCode(idPrefix);
         createTask({
@@ -5468,6 +5646,55 @@ function createTaskNow(kind){
   } else {
     departmentId = document.getElementById("tDept").value;
     responsibleUserId = document.getElementById("tResp").value;
+  }
+
+  if(recEnabled){
+    if(!STATE.recurringTemplates) STATE.recurringTemplates = [];
+    const tpl = {
+      id: uid("rt"),
+      type,
+      title,
+      description: desc,
+      departmentId,
+      responsibleUserId,
+      complexity: cx,
+      noDue,
+      controlAlways: noDue ? !!ctrlAlways : false,
+      nextControlDate: (noDue && !ctrlAlways) ? ctrl : null,
+      schedule,
+      createdBy: u.id,
+      createdAt: nowIsoKyiv(),
+      lastGenerated: null,
+    };
+    STATE.recurringTemplates.push(tpl);
+    if(recurringMatchesToday(tpl, today)){
+      tpl.lastGenerated = today;
+      createTask({
+        id,
+        type,
+        title,
+        description: desc,
+        departmentId,
+        responsibleUserId,
+        complexity: cx,
+        status,
+        startDate: today,
+        dueDate: noDue ? null : today,
+        nextControlDate: (noDue && !ctrlAlways) ? ctrl : null,
+        controlAlways: noDue ? !!ctrlAlways : false,
+        createdBy: u.id,
+        createdAt: nowIsoKyiv(),
+        updatedAt: nowIsoKyiv()
+      }, u.id);
+    } else {
+      saveState(STATE);
+    }
+    hideSheet();
+    UI.tab = ROUTES.TASKS;
+    UI.taskFilter = "активні";
+    render();
+    showToast("Шаблон створено", "ok");
+    return;
   }
 
   createTask({
@@ -6562,6 +6789,8 @@ const CHANGE_ACTIONS = {
   setWeeklyMonthFromInput,
   setWeeklyWeekIndexFromSelect,
   toggleNoDue,
+  toggleRecurrenceEnabled,
+  toggleRecurrenceType,
   toggleCtrlAlways,
   toggleDeptAll,
 };
@@ -6764,6 +6993,7 @@ function render(){
     UI.route = ROUTES.LOGIN;
     return viewLogin();
   }
+  runRecurringTemplates();
 
   if(UI.route === ROUTES.PROFILE) return viewProfile();
 
