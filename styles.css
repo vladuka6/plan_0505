@@ -771,24 +771,6 @@
     .tab.active{background: rgba(110,168,254,.16);border-color: rgba(110,168,254,.5);color: #2d5fbd;}
     .tab .ico{font-size: 19px; line-height: 1;}
     .tab .label{display:none;}
-    @media (hover:hover) and (pointer:fine){
-      .tab:hover::after{
-        content: attr(data-label);
-        position:absolute;
-        bottom: calc(100% + 8px);
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(31,42,68,.92);
-        color: #fff;
-        font-size: 11px;
-        font-weight: 700;
-        padding: 5px 8px;
-        border-radius: 8px;
-        white-space: nowrap;
-        pointer-events:none;
-        z-index: 80;
-      }
-    }
 
     .modal{
       position: fixed;inset:0;background: rgba(0,0,0,.55);
@@ -1555,12 +1537,6 @@
       color: var(--text);
     }
     body.theme-dark .tab .ico{color: var(--text);}
-    @media (hover:hover) and (pointer:fine){
-      body.theme-dark .tab:hover::after{
-        background: rgba(236,242,255,.95);
-        color: #1f2a44;
-      }
-    }
     body.theme-dark .chip{
       background: rgba(21,25,37,.75);
       border-color: rgba(35,42,58,.85);

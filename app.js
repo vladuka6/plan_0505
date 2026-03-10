@@ -1587,7 +1587,7 @@ function applyTheme(theme){
 }
 let UI = {
   route: ROUTES.LOGIN,
-  tab: ROUTES.CONTROL,
+  tab: ROUTES.TASKS,
   taskFilter: "активні",
   taskDeptFilter: "all",
   taskSearch: "",
@@ -1706,7 +1706,7 @@ function renderTabs(tabs){
       ${tabs.map(t=>{
         const active = (UI.tab===t.key) ? "active" : "";
         return `
-          <div class="tab ${active}" data-action="setTab" data-arg1="${t.key}" data-label="${htmlesc(t.label)}" title="${htmlesc(t.label)}" aria-label="${htmlesc(t.label)}">
+        <div class="tab ${active}" data-action="setTab" data-arg1="${t.key}" aria-label="${htmlesc(t.label)}">
             <div class="ico">${t.ico}</div>
             <div class="label">${htmlesc(t.label)}</div>
           </div>
@@ -1794,7 +1794,7 @@ function viewLogin(){
     recomputeDelegationStatuses();
     STATE.session.userId = user.id;
     saveState(STATE);
-    UI.tab = ROUTES.CONTROL;
+    UI.tab = ROUTES.TASKS;
     render();
   });
 
