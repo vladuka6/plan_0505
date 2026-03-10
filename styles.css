@@ -605,15 +605,17 @@
       background: rgba(110,168,254,.18);
       color:#2d5fbd;
     }
-    .rec-toggle-grid{
+    .recurring-block .rec-toggle-grid{
       display:flex;
+      flex-direction:row;
       flex-wrap:nowrap;
       gap:6px;
       margin-top:6px;
-      overflow:auto;
+      overflow-x:auto;
+      overflow-y:hidden;
       -webkit-overflow-scrolling: touch;
     }
-    .rec-toggle{
+    .recurring-block .rec-toggle{
       display:flex;
       align-items:center;
       justify-content:space-between;
@@ -623,6 +625,7 @@
       border:1px solid rgba(150,170,205,.35);
       background: rgba(255,255,255,.78);
       flex:0 0 auto;
+      min-width:84px;
     }
     .rec-label{
       font-weight:900;
