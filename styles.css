@@ -606,10 +606,12 @@
       color:#2d5fbd;
     }
     .rec-toggle-grid{
-      display:grid;
-      grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+      display:flex;
+      flex-wrap:nowrap;
       gap:6px;
       margin-top:6px;
+      overflow:auto;
+      -webkit-overflow-scrolling: touch;
     }
     .rec-toggle{
       display:flex;
@@ -620,6 +622,7 @@
       border-radius:10px;
       border:1px solid rgba(150,170,205,.35);
       background: rgba(255,255,255,.78);
+      flex:0 0 auto;
     }
     .rec-label{
       font-weight:900;
