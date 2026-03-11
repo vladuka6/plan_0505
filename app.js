@@ -3838,8 +3838,7 @@ function viewTasks(){
         `;
       }).join("")}
       <div class="chip ${(deptFilter==="personal" && personalFilter==="tasks") ? "active" : ""}" data-action="openMyTasks">Мої</div>
-      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="staff") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="staff">👥 Оголошення</div>
-      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="meeting") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="meeting">🗣 Оголошення</div>
+      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="all">Оголошення</div>
     </div>
   ` : ``;
   const searchUi = isPersonalScope ? "" : `
