@@ -4143,7 +4143,7 @@ function viewTasks(){
             <span class="dept-title-text">${highlightMatch(current)}</span>
             ${countsHtml}
           </summary>
-          <div class="dept-list">${noteBody}${groupItems.join("")}${doneBlock}</div>
+          <div class="dept-list">${groupItems.join("")}${doneBlock}${noteBody}</div>
         </details>
       `);
     };
@@ -4267,7 +4267,6 @@ function viewTasks(){
   ` : "";
 
   const listParts = [];
-  if(deptNoteBlock) listParts.push(deptNoteBlock);
   if(showAnnouncementsScope && effectivePersonalFilter!=="tasks"){
     listParts.push(announcementsBlock);
   }
@@ -4277,6 +4276,7 @@ function viewTasks(){
   if(effectivePersonalFilter!=="announcements"){
     listParts.push(tasksList);
   }
+  if(deptNoteBlock) listParts.push(deptNoteBlock);
   const list = listParts.join("");
 
   const body = `
