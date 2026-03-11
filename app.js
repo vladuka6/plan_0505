@@ -4120,15 +4120,12 @@ function viewTasks(){
       const deptObj = (u.role==="boss" && currentKey && currentKey!=="personal") ? getDeptById(currentKey) : null;
       const noteRaw = (deptObj?.note || "").trim();
       const canEditNote = !!deptObj && !u.readOnly;
-      const noteText = noteRaw ? htmlesc(shorten(noteRaw, 200)) : "";
-      const noteEditBtn = canEditNote
-        ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${deptObj.id}" title="Примітка">✏️</button>`
+      const showNoteToggle = !!deptObj && (noteRaw || canEditNote);
+      const noteToggleBtn = showNoteToggle
+        ? `<button class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-open="1" data-note-target="dept-note-${deptObj.id}" data-dept-id="${deptObj.id}" title="Примітка">✏️</button>`
         : "";
-      const noteHtml = (deptObj && (noteRaw || canEditNote)) ? `
-        <div class="dept-note${noteRaw ? " has-note" : ""}" data-note-toggle="1" data-note-open="1" data-dept-id="${deptObj.id}">
-          <div class="dept-note-text">${noteText}</div>
-          ${noteEditBtn}
-        </div>
+      const noteBody = (deptObj && noteRaw) ? `
+        <div class="dept-note-body" id="dept-note-${deptObj.id}">${htmlesc(noteRaw)}</div>
       ` : "";
       const countsHtml = `
         <span class="dept-counts">
@@ -4136,6 +4133,7 @@ function viewTasks(){
           ${countBadge("⛔", "Блокер", counts.blocker, "count-blocker")}
           ${countBadge("🗓", "Контроль з датою", counts.controlDate, "count-ctrl")}
           ${countBadge("🎯", "Контроль постійно", counts.controlAlways, "count-always")}
+          ${noteToggleBtn}
         </span>
       `;
       const openAttr = openAttrFor(currentKey || "");
@@ -4145,7 +4143,7 @@ function viewTasks(){
             <span class="dept-title-text">${highlightMatch(current)}</span>
             ${countsHtml}
           </summary>
-          <div class="dept-list">${noteHtml}${groupItems.join("")}${doneBlock}</div>
+          <div class="dept-list">${noteBody}${groupItems.join("")}${doneBlock}</div>
         </details>
       `);
     };
@@ -4197,20 +4195,17 @@ function viewTasks(){
     const dept = getDeptById(deptFilter);
     if(!dept) return "";
     const noteRaw = (dept.note || "").trim();
+    if(!noteRaw) return "";
+    return `<div class="dept-note-body" id="dept-note-${dept.id}">${htmlesc(noteRaw)}</div>`;
+  })();
+  const deptNoteActionBtn = (()=> {
+    if(u.role!=="boss" || deptFilter==="all" || deptFilter==="personal") return "";
+    const dept = getDeptById(deptFilter);
+    if(!dept) return "";
+    const noteRaw = (dept.note || "").trim();
     const canEditNote = !u.readOnly;
     if(!noteRaw && !canEditNote) return "";
-    const noteShort = noteRaw ? shorten(noteRaw, 220) : "";
-    const editBtn = canEditNote
-      ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${dept.id}" title="Примітка">✏️</button>`
-      : "";
-    return `
-      <div class="item dept-note-block" style="cursor:default;">
-        <div class="dept-note${noteRaw ? " has-note" : ""}" data-note-toggle="1" data-note-open="1" data-dept-id="${dept.id}">
-          <div class="dept-note-text">${noteShort ? htmlesc(noteShort) : ""}</div>
-          ${editBtn}
-        </div>
-      </div>
-    `;
+    return `<button class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-open="1" data-note-target="dept-note-${dept.id}" data-dept-id="${dept.id}" title="Примітка">✏️</button>`;
   })();
 
   const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
@@ -4291,6 +4286,7 @@ function viewTasks(){
           <div class="t">Задачі</div>
           <div class="card-actions">
           ${u.role==="boss" ? `<button class="btn ghost" data-action="openTasksExportDialog">⬇️ Excel</button>` : ``}
+          ${deptNoteActionBtn}
           ${announcementBtn}
           ${u.role==="boss" ? `` : `<span class="badge b-blue">Мій відділ</span>`}
           </div>
@@ -7153,7 +7149,12 @@ document.addEventListener("click", (e)=>{
   if(noteEl){
     if(e.button !== 0) return;
     e.preventDefault();
-    noteEl.classList.toggle("open");
+    e.stopPropagation();
+    const targetId = noteEl.dataset.noteTarget;
+    if(targetId){
+      const body = document.getElementById(targetId);
+      if(body) body.classList.toggle("open");
+    }
     return;
   }
 
