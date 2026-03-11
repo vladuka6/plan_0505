@@ -4119,13 +4119,14 @@ function viewTasks(){
       const doneBlock = doneItems.length ? renderDoneToggle(doneItems, groupItems.length) : "";
       const deptObj = (u.role==="boss" && currentKey && currentKey!=="personal") ? getDeptById(currentKey) : null;
       const noteRaw = (deptObj?.note || "").trim();
-      const noteShort = noteRaw ? shorten(noteRaw, 200) : "—";
-      const noteEditBtn = (deptObj && !u.readOnly)
-        ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${deptObj.id}">✏️</button>`
+      const canEditNote = !!deptObj && !u.readOnly;
+      const noteText = noteRaw ? htmlesc(shorten(noteRaw, 200)) : "";
+      const noteEditBtn = canEditNote
+        ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${deptObj.id}" title="Примітка">✏️</button>`
         : "";
-      const noteHtml = deptObj ? `
-        <div class="dept-note">
-          <div class="dept-note-text"><span class="dept-note-label">Примітка:</span> ${htmlesc(noteShort)}</div>
+      const noteHtml = (deptObj && (noteRaw || canEditNote)) ? `
+        <div class="dept-note${noteRaw ? " has-note" : ""}" data-note-toggle="1" data-note-open="1" data-dept-id="${deptObj.id}">
+          <div class="dept-note-text">${noteText}</div>
           ${noteEditBtn}
         </div>
       ` : "";
@@ -4196,17 +4197,16 @@ function viewTasks(){
     const dept = getDeptById(deptFilter);
     if(!dept) return "";
     const noteRaw = (dept.note || "").trim();
-    const noteShort = noteRaw ? shorten(noteRaw, 220) : "—";
-    const editBtn = !u.readOnly
-      ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${dept.id}">✏️ Редагувати</button>`
+    const canEditNote = !u.readOnly;
+    if(!noteRaw && !canEditNote) return "";
+    const noteShort = noteRaw ? shorten(noteRaw, 220) : "";
+    const editBtn = canEditNote
+      ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${dept.id}" title="Примітка">✏️</button>`
       : "";
     return `
       <div class="item dept-note-block" style="cursor:default;">
-        <div class="row">
-          <div>
-            <div class="name">📝 Примітка — ${htmlesc(dept.name)}</div>
-            <div class="hint" style="margin-top:8px; white-space:pre-wrap;">${htmlesc(noteShort)}</div>
-          </div>
+        <div class="dept-note${noteRaw ? " has-note" : ""}" data-note-toggle="1" data-note-open="1" data-dept-id="${dept.id}">
+          <div class="dept-note-text">${noteShort ? htmlesc(noteShort) : ""}</div>
           ${editBtn}
         </div>
       </div>
@@ -7149,6 +7149,14 @@ function initOverdueTicker(){
 }
 
 document.addEventListener("click", (e)=>{
+  const noteEl = e.target.closest("[data-note-toggle]");
+  if(noteEl){
+    if(e.button !== 0) return;
+    e.preventDefault();
+    noteEl.classList.toggle("open");
+    return;
+  }
+
   const el = e.target.closest("[data-action]");
   if(!el) return;
   e.preventDefault();
@@ -7158,6 +7166,14 @@ document.addEventListener("click", (e)=>{
     return runMappedAction(el.dataset.next, el.dataset.arg1, el.dataset.arg2);
   }
   runMappedAction(el.dataset.action, el.dataset.arg1, el.dataset.arg2);
+});
+document.addEventListener("dblclick", (e)=>{
+  const noteEl = e.target.closest("[data-note-open]");
+  if(!noteEl) return;
+  if(e.button !== 0) return;
+  e.preventDefault();
+  const deptId = noteEl.dataset.deptId;
+  if(deptId) runMappedAction("openDeptNote", deptId);
 });
 document.addEventListener("change", (e)=>{
   const el = e.target.closest("[data-change]");
