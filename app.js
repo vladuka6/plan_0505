@@ -3903,6 +3903,15 @@ function viewTasks(){
     + (showAnns ? announcements.filter(t=>t.status!=="закрито" && t.status!=="скасовано").length : 0);
   const closedCount = (showTasks ? tasks.filter(t=>t.status==="закрито" || t.status==="скасовано").length : 0)
     + (showAnns ? announcements.filter(t=>t.status==="закрито" || t.status==="скасовано").length : 0);
+  const deptNoteActionBtn = (()=> {
+    if(u.role!=="boss" || deptFilter==="all" || deptFilter==="personal") return "";
+    const dept = getDeptById(deptFilter);
+    if(!dept) return "";
+    const noteRaw = (dept.note || "").trim();
+    const canEditNote = !u.readOnly;
+    if(!noteRaw && !canEditNote) return "";
+    return `<button type="button" class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-target="dept-note-${dept.id}" data-dept-id="${dept.id}" title="Примітка">✏️</button>`;
+  })();
   const searchHint = (filter==="активні")
     ? `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${activeCount}</span> активних ${deptNoteActionBtn || ""}</div>`
     : `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${totalCount}</span> (всього) ${deptNoteActionBtn || ""}<div class="subhint">активні <span class="mono">${activeCount}</span>, закриті <span class="mono">${closedCount}</span></div></div>`;
@@ -4154,15 +4163,6 @@ function viewTasks(){
         ${canEditNote ? `<button type="button" class="btn ghost btn-mini dept-note-edit" data-action="openDeptNote" data-arg1="${dept.id}">✏️</button>` : ``}
       </div>
     `;
-  })();
-  const deptNoteActionBtn = (()=> {
-    if(u.role!=="boss" || deptFilter==="all" || deptFilter==="personal") return "";
-    const dept = getDeptById(deptFilter);
-    if(!dept) return "";
-    const noteRaw = (dept.note || "").trim();
-    const canEditNote = !u.readOnly;
-    if(!noteRaw && !canEditNote) return "";
-    return `<button type="button" class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-target="dept-note-${dept.id}" data-dept-id="${dept.id}" title="Примітка">✏️</button>`;
   })();
 
   const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
