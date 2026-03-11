@@ -3673,7 +3673,6 @@ function viewTasks(){
   const deptFilter = UI.taskDeptFilter || "all";
   const taskSearch = UI.taskSearch || "";
   const personalFilter = UI.taskPersonalFilter || "all";
-  const annAudience = UI.taskAnnAudienceFilter || "all";
   const showAnnouncementsScope = (u.role!=="boss") || (u.role==="boss" && deptFilter==="personal");
   const isPersonalScope = (u.role==="boss" && deptFilter==="personal");
   const effectivePersonalFilter = showAnnouncementsScope ? personalFilter : "tasks";
@@ -3838,8 +3837,6 @@ function viewTasks(){
         `;
       }).join("")}
       <div class="chip ${(deptFilter==="personal" && personalFilter==="tasks") ? "active" : ""}" data-action="openMyTasks">Мої</div>
-      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="staff") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="staff">👥 Оголошення</div>
-      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="meeting") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="meeting">🗣 Оголошення</div>
     </div>
   ` : ``;
   const searchUi = isPersonalScope ? "" : `
@@ -4096,15 +4093,6 @@ function viewTasks(){
   let meetingHiddenAnnouncements = annDisplay.filter(t=>t.audience === "meeting" && isMeetingHiddenToday(t));
   let staffClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience !== "meeting") : [];
   let meetingClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience === "meeting") : [];
-  if(annAudience === "staff"){
-    meetingAnnouncements = [];
-    meetingHiddenAnnouncements = [];
-    meetingClosedAnnouncements = [];
-  }
-  if(annAudience === "meeting"){
-    staffAnnouncements = [];
-    staffClosedAnnouncements = [];
-  }
   const renderAnnouncementDone = (list)=>(
     showDoneToggle && list.length
       ? `
