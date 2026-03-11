@@ -3826,9 +3826,6 @@ function viewTasks(){
   ` : ``;
   const deptChips = (u.role==="boss") ? `
     <div class="chips dept-chips dept-segments">
-      <div class="chip ${(deptFilter==="personal" && personalFilter==="tasks") ? "active" : ""}" data-action="openMyTasks">Мої</div>
-      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="staff") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="staff">👥 Оголошення</div>
-      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="meeting") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="meeting">🗣 Оголошення</div>
       ${STATE.departments.map(d=>{
         const active = deptFilter===d.id ? "active" : "";
         return `
@@ -3840,6 +3837,9 @@ function viewTasks(){
           </div>
         `;
       }).join("")}
+      <div class="chip ${(deptFilter==="personal" && personalFilter==="tasks") ? "active" : ""}" data-action="openMyTasks">Мої</div>
+      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="staff") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="staff">👥 Оголошення</div>
+      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="meeting") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="meeting">🗣 Оголошення</div>
     </div>
   ` : ``;
   const searchUi = isPersonalScope ? "" : `
