@@ -4117,6 +4117,18 @@ function viewTasks(){
       if(current === null) return;
       const doneItems = showDoneToggle ? (completedByDept[current] || []) : [];
       const doneBlock = doneItems.length ? renderDoneToggle(doneItems, groupItems.length) : "";
+      const deptObj = (u.role==="boss" && currentKey && currentKey!=="personal") ? getDeptById(currentKey) : null;
+      const noteRaw = (deptObj?.note || "").trim();
+      const noteShort = noteRaw ? shorten(noteRaw, 200) : "—";
+      const noteEditBtn = (deptObj && !u.readOnly)
+        ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${deptObj.id}">✏️</button>`
+        : "";
+      const noteHtml = deptObj ? `
+        <div class="dept-note">
+          <div class="dept-note-text"><span class="dept-note-label">Примітка:</span> ${htmlesc(noteShort)}</div>
+          ${noteEditBtn}
+        </div>
+      ` : "";
       const countsHtml = `
         <span class="dept-counts">
           ${countBadge("⏱", "Дедлайн", counts.due, "count-due")}
@@ -4132,7 +4144,7 @@ function viewTasks(){
             <span class="dept-title-text">${highlightMatch(current)}</span>
             ${countsHtml}
           </summary>
-          <div class="dept-list">${groupItems.join("")}${doneBlock}</div>
+          <div class="dept-list">${noteHtml}${groupItems.join("")}${doneBlock}</div>
         </details>
       `);
     };
@@ -4178,6 +4190,28 @@ function viewTasks(){
   } else {
     tasksList = emptyHint;
   }
+
+  const deptNoteBlock = (()=> {
+    if(u.role!=="boss" || deptFilter==="all" || deptFilter==="personal") return "";
+    const dept = getDeptById(deptFilter);
+    if(!dept) return "";
+    const noteRaw = (dept.note || "").trim();
+    const noteShort = noteRaw ? shorten(noteRaw, 220) : "—";
+    const editBtn = !u.readOnly
+      ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${dept.id}">✏️ Редагувати</button>`
+      : "";
+    return `
+      <div class="item dept-note-block" style="cursor:default;">
+        <div class="row">
+          <div>
+            <div class="name">📝 Примітка — ${htmlesc(dept.name)}</div>
+            <div class="hint" style="margin-top:8px; white-space:pre-wrap;">${htmlesc(noteShort)}</div>
+          </div>
+          ${editBtn}
+        </div>
+      </div>
+    `;
+  })();
 
   const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
   let staffAnnouncements = annDisplay.filter(t=>t.audience !== "meeting");
@@ -4238,6 +4272,7 @@ function viewTasks(){
   ` : "";
 
   const listParts = [];
+  if(deptNoteBlock) listParts.push(deptNoteBlock);
   if(showAnnouncementsScope && effectivePersonalFilter!=="tasks"){
     listParts.push(announcementsBlock);
   }
