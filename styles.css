@@ -401,8 +401,8 @@
       left: 0;
       right: auto;
       min-width: 240px;
-      max-width: min(520px, calc(100vw - 28px));
-      width: clamp(240px, 60vw, 520px);
+      max-width: min(620px, calc(100vw - 28px));
+      width: max-content;
       max-height: 240px;
       overflow:auto;
       padding:8px 10px;
