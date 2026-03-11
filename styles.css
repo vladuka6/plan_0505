@@ -1212,6 +1212,24 @@
       .task-title{flex-direction:row;align-items:center;min-width:0;flex:1;}
       .task-title .name{font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
       .task-num{font-size:11px;}
+      .task-item.announcement-item .task-title{
+        flex-direction:column;
+        align-items:flex-start;
+        gap:4px;
+      }
+      .task-item.announcement-item .task-title .name{
+        font-size:12px;
+        line-height:1.2;
+        white-space:normal;
+        overflow:visible;
+        text-overflow:clip;
+        word-break: break-word;
+      }
+      .task-item.announcement-item .task-search-meta,
+      .task-item.announcement-item .ann-meta{
+        max-width:100%;
+        white-space:normal;
+      }
       .task-token{font-size:11px;padding:2px 7px;}
       .task-note{display:none;}
       .qa-full{display:none;}
