@@ -1592,6 +1592,7 @@ let UI = {
   taskDeptFilter: "all",
   taskSearch: "",
   taskPersonalFilter: "all",
+  taskAnnAudienceFilter: "all",
   taskIndexMap: {},
   deptOpen: {},
   analyticsShowDetails: false,
@@ -3582,8 +3583,33 @@ function viewWeeklyTasks(){
    TASKS VIEW + ACTIONS
 =========================== */
 function setTaskFilter(k){ UI.taskFilter = k; render(); }
-function setTaskDeptFilter(k){ UI.taskDeptFilter = k; render(); }
+function setTaskDeptFilter(k){
+  UI.taskDeptFilter = k;
+  if(k !== "personal"){
+    UI.taskPersonalFilter = "all";
+    UI.taskAnnAudienceFilter = "all";
+  }
+  render();
+}
 function setTaskPersonalFilter(k){ UI.taskPersonalFilter = k; render(); }
+function openMyTasks(){
+  UI.taskDeptFilter = "personal";
+  UI.taskPersonalFilter = "tasks";
+  UI.taskAnnAudienceFilter = "all";
+  render();
+}
+function openAllTasks(){
+  UI.taskDeptFilter = "all";
+  UI.taskPersonalFilter = "all";
+  UI.taskAnnAudienceFilter = "all";
+  render();
+}
+function openAnnouncementsAudience(aud){
+  UI.taskDeptFilter = "personal";
+  UI.taskPersonalFilter = "announcements";
+  UI.taskAnnAudienceFilter = aud;
+  render();
+}
 function toggleTaskScope(){
   const next = (UI.taskDeptFilter === "personal") ? "all" : "personal";
   UI.taskDeptFilter = next;
@@ -3647,6 +3673,7 @@ function viewTasks(){
   const deptFilter = UI.taskDeptFilter || "all";
   const taskSearch = UI.taskSearch || "";
   const personalFilter = UI.taskPersonalFilter || "all";
+  const annAudience = UI.taskAnnAudienceFilter || "all";
   const showAnnouncementsScope = (u.role!=="boss") || (u.role==="boss" && deptFilter==="personal");
   const isPersonalScope = (u.role==="boss" && deptFilter==="personal");
   const effectivePersonalFilter = showAnnouncementsScope ? personalFilter : "tasks";
@@ -3797,8 +3824,11 @@ function viewTasks(){
       <div class="chip ${personalFilter==="announcements"?"active":""}" data-action="setTaskPersonalFilter" data-arg1="announcements">Оголошення</div>
     </div>
   ` : ``;
-  const deptChips = (u.role==="boss" && !isPersonalScope) ? `
+  const deptChips = (u.role==="boss") ? `
     <div class="chips dept-chips dept-segments">
+      <div class="chip ${(deptFilter==="personal" && personalFilter==="tasks") ? "active" : ""}" data-action="openMyTasks">Мої</div>
+      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="staff") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="staff">👥 Оголошення</div>
+      <div class="chip ${(deptFilter==="personal" && personalFilter==="announcements" && annAudience==="meeting") ? "active" : ""}" data-action="openAnnouncementsAudience" data-arg1="meeting">🗣 Оголошення</div>
       ${STATE.departments.map(d=>{
         const active = deptFilter===d.id ? "active" : "";
         return `
@@ -4061,11 +4091,20 @@ function viewTasks(){
   }
 
   const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
-  const staffAnnouncements = annDisplay.filter(t=>t.audience !== "meeting");
-  const meetingAnnouncements = annDisplay.filter(t=>t.audience === "meeting" && !isMeetingHiddenToday(t));
-  const meetingHiddenAnnouncements = annDisplay.filter(t=>t.audience === "meeting" && isMeetingHiddenToday(t));
-  const staffClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience !== "meeting") : [];
-  const meetingClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience === "meeting") : [];
+  let staffAnnouncements = annDisplay.filter(t=>t.audience !== "meeting");
+  let meetingAnnouncements = annDisplay.filter(t=>t.audience === "meeting" && !isMeetingHiddenToday(t));
+  let meetingHiddenAnnouncements = annDisplay.filter(t=>t.audience === "meeting" && isMeetingHiddenToday(t));
+  let staffClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience !== "meeting") : [];
+  let meetingClosedAnnouncements = showDoneToggle ? announcementsClosed.filter(t=>t.audience === "meeting") : [];
+  if(annAudience === "staff"){
+    meetingAnnouncements = [];
+    meetingHiddenAnnouncements = [];
+    meetingClosedAnnouncements = [];
+  }
+  if(annAudience === "meeting"){
+    staffAnnouncements = [];
+    staffClosedAnnouncements = [];
+  }
   const renderAnnouncementDone = (list)=>(
     showDoneToggle && list.length
       ? `
@@ -4129,7 +4168,7 @@ function viewTasks(){
           <div class="card-actions">
           ${u.role==="boss" ? `<button class="btn ghost" data-action="openTasksExportDialog">⬇️ Excel</button>` : ``}
           ${announcementBtn}
-          ${u.role==="boss" ? `<button class="btn ghost" data-action="toggleTaskScope">${UI.taskDeptFilter==="personal" ? "Мої" : "Всі"}</button>` : `<span class="badge b-blue">Мій відділ</span>`}
+          ${u.role==="boss" ? `` : `<span class="badge b-blue">Мій відділ</span>`}
           </div>
         </div>
         ${(statusChips || personalChips || searchBlock) ? `
@@ -6749,6 +6788,9 @@ const ACTIONS = {
   openReportForm,
   openReportStatusTasks,
   openQuickActions,
+  openMyTasks,
+  openAllTasks,
+  openAnnouncementsAudience,
   openTasksExportDialog,
   openTask,
   openEditTask,
