@@ -2698,6 +2698,7 @@ function openDeptNote(deptId){
     <div class="field">
       <label>Примітка</label>
       <textarea id="deptNoteText" maxlength="600" placeholder="Коротка примітка по відділу…">${htmlesc(dept.note || "")}</textarea>
+      ${formatToolbar("deptNoteText", "inline")}
     </div>
     <div class="hint">Ліміт: 600 символів.</div>
     <div class="actions" style="margin-top:14px;">
@@ -3910,7 +3911,7 @@ function viewTasks(){
     const noteRaw = (dept.note || "").trim();
     const canEditNote = !u.readOnly;
     if(!noteRaw && !canEditNote) return "";
-    const tip = noteRaw ? `<div class="dept-note-pop">${htmlesc(noteRaw)}</div>` : "";
+    const tip = noteRaw ? `<div class="dept-note-pop"><div class="rich-text">${richText(noteRaw)}</div></div>` : "";
     return `
       <span class="dept-note-tip">
         <button type="button" class="btn ghost btn-mini dept-note-btn" data-action="openDeptNote" data-arg1="${dept.id}" title="Примітка">✏️</button>
