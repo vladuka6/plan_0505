@@ -2345,11 +2345,6 @@ function openDeptAnalytics(deptId, periodKey="week"){
     if(totalBlockerReasons > 0) return "Висновок: є повторювані блокери — перевірити причини і зняти ризики.";
     return "Висновок: відділ працює стабільно, критичних сигналів не виявлено.";
   })();
-  const noteText = (dept.note || "").trim();
-  const noteHtml = htmlesc(noteText || "—");
-  const noteEditBtn = !u.readOnly
-    ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${deptId}">✏️ Редагувати</button>`
-    : "";
 
   const periodChips = `
     <div class="chips task-chips" style="margin-top:8px;">
@@ -2444,14 +2439,6 @@ function openDeptAnalytics(deptId, periodKey="week"){
       <div class="report-meta">${conclusion}</div>
     </div>
 
-    <div class="report-section">
-      <div class="report-title">Примітка</div>
-      <div class="report-meta report-note">
-        <span class="note-text">${noteHtml}</span>
-        ${noteEditBtn}
-      </div>
-    </div>
-
     <div class="sep"></div>
     <button class="btn primary" data-action="hideSheet">Закрити</button>
   `);
@@ -2524,28 +2511,18 @@ function openAllDeptReport(periodKey="week"){
   `;
 
   const deptListHtml = deptRows.length
-    ? `<ul class="report-list">` + deptRows.map(r=>{
-        const noteShort = shorten((r.dept.note || "").trim(), 160);
-        const editBtn = !u.readOnly
-          ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${r.dept.id}">✏️ Примітка</button>`
-          : "";
-        return `
-          <li>
-            <div class="report-line">
-              <span class="report-strong">${htmlesc(r.dept.name)}</span>
-              <span class="badge b-blue">Активні ${r.active}</span>
-              <span class="badge b-warn">Блокери ${r.blockers}</span>
-              <span class="badge b-danger">Прострочені ${r.overdue}</span>
-              <span class="badge b-ok">Закрито ${r.closed}</span>
-            </div>
-            <div class="report-meta">В строк: <b>${r.onTime}</b>${r.closedWithDue ? ` (${pct(r.onTime, r.closedWithDue)}%)` : ""} • Прострочено при закритті: <b>${r.late}</b>${r.closedWithDue ? ` (${pct(r.late, r.closedWithDue)}%)` : ""}</div>
-            <div class="report-meta report-note">
-              <span class="note-text">Примітка: ${htmlesc(noteShort)}</span>
-              ${editBtn}
-            </div>
-          </li>
-        `;
-      }).join("") + `</ul>`
+    ? `<ul class="report-list">` + deptRows.map(r=>`
+        <li>
+          <div class="report-line">
+            <span class="report-strong">${htmlesc(r.dept.name)}</span>
+            <span class="badge b-blue">Активні ${r.active}</span>
+            <span class="badge b-warn">Блокери ${r.blockers}</span>
+            <span class="badge b-danger">Прострочені ${r.overdue}</span>
+            <span class="badge b-ok">Закрито ${r.closed}</span>
+          </div>
+          <div class="report-meta">В строк: <b>${r.onTime}</b>${r.closedWithDue ? ` (${pct(r.onTime, r.closedWithDue)}%)` : ""} • Прострочено при закритті: <b>${r.late}</b>${r.closedWithDue ? ` (${pct(r.late, r.closedWithDue)}%)` : ""}</div>
+        </li>
+      `).join("") + `</ul>`
     : `<div class="hint">Немає даних по відділах.</div>`;
 
   const personalBlock = !u.readOnly ? `
@@ -2957,29 +2934,6 @@ function viewReports(){
     <div class="sep"></div>
   ` : ``;
 
-  const deptNoteBlock = (()=> {
-    if(u.role === "boss") return "";
-    const dept = getDeptById(u.departmentId);
-    if(!dept) return "";
-    const {isDeptHeadLike} = asDeptRole(u);
-    const noteText = (dept.note || "").trim() || "—";
-    const editBtn = (!u.readOnly && isDeptHeadLike)
-      ? `<button class="btn ghost" data-action="openDeptNote" data-arg1="${dept.id}">✏️ Редагувати</button>`
-      : "";
-    return `
-      <div class="item" style="cursor:default;">
-        <div class="row">
-          <div>
-            <div class="name">📝 Примітка відділу</div>
-            <div class="hint" style="margin-top:8px; white-space:pre-wrap;">${htmlesc(noteText)}</div>
-          </div>
-          ${editBtn}
-        </div>
-      </div>
-      <div class="sep"></div>
-    `;
-  })();
-
   const listReports = reports.length ? reports.map(r=>{
     const usr = getUserById(r.userId);
     const dept = getDeptById(r.departmentId);
@@ -3038,7 +2992,6 @@ function viewReports(){
         <div class="sep"></div>
 
         ${controlBlock}
-        ${deptNoteBlock}
 
         <div class="item" style="cursor:default;">
           <div class="row"><div class="name">🧾 Підсумки відділів</div><span class="badge b-violet mono">${sums.length}</span></div>
@@ -3951,8 +3904,8 @@ function viewTasks(){
   const closedCount = (showTasks ? tasks.filter(t=>t.status==="закрито" || t.status==="скасовано").length : 0)
     + (showAnns ? announcements.filter(t=>t.status==="закрито" || t.status==="скасовано").length : 0);
   const searchHint = (filter==="активні")
-    ? `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${activeCount}</span> активних</div>`
-    : `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${totalCount}</span> (всього)<div class="subhint">активні <span class="mono">${activeCount}</span>, закриті <span class="mono">${closedCount}</span></div></div>`;
+    ? `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${activeCount}</span> активних ${deptNoteActionBtn || ""}</div>`
+    : `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${totalCount}</span> (всього) ${deptNoteActionBtn || ""}<div class="subhint">активні <span class="mono">${activeCount}</span>, закриті <span class="mono">${closedCount}</span></div></div>`;
   const announcementBtn = (u.role==="boss" && !u.readOnly && showAnnouncementsScope)
     ? `<button class="btn ghost" data-action="openCreateAnnouncement">📣 Оголошення</button>`
     : ``;
@@ -4120,12 +4073,11 @@ function viewTasks(){
       const deptObj = (u.role==="boss" && currentKey && currentKey!=="personal") ? getDeptById(currentKey) : null;
       const noteRaw = (deptObj?.note || "").trim();
       const canEditNote = !!deptObj && !u.readOnly;
-      const showNoteToggle = !!deptObj && (noteRaw || canEditNote);
-      const noteToggleBtn = showNoteToggle
-        ? `<button type="button" class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-open="1" data-note-target="dept-note-${deptObj.id}" data-dept-id="${deptObj.id}" title="Примітка">✏️</button>`
-        : "";
-      const noteBody = (deptObj && noteRaw) ? `
-        <div class="dept-note-body" id="dept-note-${deptObj.id}">${htmlesc(noteRaw)}</div>
+      const noteBody = (deptObj && (noteRaw || canEditNote)) ? `
+        <div class="dept-note-body" id="dept-note-${deptObj.id}" data-dept-id="${deptObj.id}">
+          ${noteRaw ? `<div class="dept-note-text">${htmlesc(noteRaw)}</div>` : ``}
+          ${canEditNote ? `<button type="button" class="btn ghost btn-mini dept-note-edit" data-action="openDeptNote" data-arg1="${deptObj.id}">✏️</button>` : ``}
+        </div>
       ` : "";
       const countsHtml = `
         <span class="dept-counts">
@@ -4133,7 +4085,6 @@ function viewTasks(){
           ${countBadge("⛔", "Блокер", counts.blocker, "count-blocker")}
           ${countBadge("🗓", "Контроль з датою", counts.controlDate, "count-ctrl")}
           ${countBadge("🎯", "Контроль постійно", counts.controlAlways, "count-always")}
-          ${noteToggleBtn}
         </span>
       `;
       const openAttr = openAttrFor(currentKey || "");
@@ -4195,8 +4146,14 @@ function viewTasks(){
     const dept = getDeptById(deptFilter);
     if(!dept) return "";
     const noteRaw = (dept.note || "").trim();
-    if(!noteRaw) return "";
-    return `<div class="dept-note-body" id="dept-note-${dept.id}">${htmlesc(noteRaw)}</div>`;
+    const canEditNote = !u.readOnly;
+    if(!noteRaw && !canEditNote) return "";
+    return `
+      <div class="dept-note-body" id="dept-note-${dept.id}" data-dept-id="${dept.id}">
+        ${noteRaw ? `<div class="dept-note-text">${htmlesc(noteRaw)}</div>` : ``}
+        ${canEditNote ? `<button type="button" class="btn ghost btn-mini dept-note-edit" data-action="openDeptNote" data-arg1="${dept.id}">✏️</button>` : ``}
+      </div>
+    `;
   })();
   const deptNoteActionBtn = (()=> {
     if(u.role!=="boss" || deptFilter==="all" || deptFilter==="personal") return "";
@@ -4205,7 +4162,7 @@ function viewTasks(){
     const noteRaw = (dept.note || "").trim();
     const canEditNote = !u.readOnly;
     if(!noteRaw && !canEditNote) return "";
-    return `<button type="button" class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-open="1" data-note-target="dept-note-${dept.id}" data-dept-id="${dept.id}" title="Примітка">✏️</button>`;
+    return `<button type="button" class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-target="dept-note-${dept.id}" data-dept-id="${dept.id}" title="Примітка">✏️</button>`;
   })();
 
   const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
@@ -4286,7 +4243,6 @@ function viewTasks(){
           <div class="t">Задачі</div>
           <div class="card-actions">
           ${u.role==="boss" ? `<button class="btn ghost" data-action="openTasksExportDialog">⬇️ Excel</button>` : ``}
-          ${deptNoteActionBtn}
           ${announcementBtn}
           ${u.role==="boss" ? `` : `<span class="badge b-blue">Мій відділ</span>`}
           </div>
@@ -7168,16 +7124,6 @@ document.addEventListener("click", (e)=>{
     return runMappedAction(el.dataset.next, el.dataset.arg1, el.dataset.arg2);
   }
   runMappedAction(el.dataset.action, el.dataset.arg1, el.dataset.arg2);
-});
-document.addEventListener("dblclick", (e)=>{
-  const noteEl = e.target.closest("[data-note-open]");
-  if(!noteEl) return;
-  if(e.button !== 0) return;
-  e.preventDefault();
-  e.stopPropagation();
-  e.stopImmediatePropagation();
-  const deptId = noteEl.dataset.deptId;
-  if(deptId) runMappedAction("openDeptNote", deptId);
 });
 document.addEventListener("change", (e)=>{
   const el = e.target.closest("[data-change]");
