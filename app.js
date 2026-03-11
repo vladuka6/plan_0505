@@ -3910,7 +3910,13 @@ function viewTasks(){
     const noteRaw = (dept.note || "").trim();
     const canEditNote = !u.readOnly;
     if(!noteRaw && !canEditNote) return "";
-    return `<button type="button" class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-target="dept-note-${dept.id}" data-dept-id="${dept.id}" title="Примітка">✏️</button>`;
+    const tip = noteRaw ? `<div class="dept-note-pop">${htmlesc(noteRaw)}</div>` : "";
+    return `
+      <span class="dept-note-tip">
+        <button type="button" class="btn ghost btn-mini dept-note-btn" data-action="openDeptNote" data-arg1="${dept.id}" title="Примітка">✏️</button>
+        ${tip}
+      </span>
+    `;
   })();
   const searchHint = (filter==="активні")
     ? `<div class="hint task-count-hint">Показано: <span class="mono">${shownCount}</span> із <span class="mono">${activeCount}</span> активних ${deptNoteActionBtn || ""}</div>`
@@ -4079,15 +4085,7 @@ function viewTasks(){
       if(current === null) return;
       const doneItems = showDoneToggle ? (completedByDept[current] || []) : [];
       const doneBlock = doneItems.length ? renderDoneToggle(doneItems, groupItems.length) : "";
-      const deptObj = (u.role==="boss" && currentKey && currentKey!=="personal") ? getDeptById(currentKey) : null;
-      const noteRaw = (deptObj?.note || "").trim();
-      const canEditNote = !!deptObj && !u.readOnly;
-      const noteBody = (deptObj && (noteRaw || canEditNote)) ? `
-        <div class="dept-note-body" id="dept-note-${deptObj.id}" data-dept-id="${deptObj.id}">
-          ${noteRaw ? `<div class="dept-note-text">${htmlesc(noteRaw)}</div>` : ``}
-          ${canEditNote ? `<button type="button" class="btn ghost btn-mini dept-note-edit" data-action="openDeptNote" data-arg1="${deptObj.id}">✏️</button>` : ``}
-        </div>
-      ` : "";
+      const noteBody = "";
       const countsHtml = `
         <span class="dept-counts">
           ${countBadge("⏱", "Дедлайн", counts.due, "count-due")}
@@ -4149,21 +4147,6 @@ function viewTasks(){
   } else {
     tasksList = emptyHint;
   }
-
-  const deptNoteBlock = (()=> {
-    if(u.role!=="boss" || deptFilter==="all" || deptFilter==="personal") return "";
-    const dept = getDeptById(deptFilter);
-    if(!dept) return "";
-    const noteRaw = (dept.note || "").trim();
-    const canEditNote = !u.readOnly;
-    if(!noteRaw && !canEditNote) return "";
-    return `
-      <div class="dept-note-body" id="dept-note-${dept.id}" data-dept-id="${dept.id}">
-        ${noteRaw ? `<div class="dept-note-text">${htmlesc(noteRaw)}</div>` : ``}
-        ${canEditNote ? `<button type="button" class="btn ghost btn-mini dept-note-edit" data-action="openDeptNote" data-arg1="${dept.id}">✏️</button>` : ``}
-      </div>
-    `;
-  })();
 
   const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
   let staffAnnouncements = annDisplay.filter(t=>t.audience !== "meeting");
@@ -4233,7 +4216,6 @@ function viewTasks(){
   if(effectivePersonalFilter!=="announcements"){
     listParts.push(tasksList);
   }
-  if(deptNoteBlock) listParts.push(deptNoteBlock);
   const list = listParts.join("");
 
   const body = `
@@ -7101,20 +7083,6 @@ function initOverdueTicker(){
 }
 
 document.addEventListener("click", (e)=>{
-  const noteEl = e.target.closest("[data-note-toggle]");
-  if(noteEl){
-    if(e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    const targetId = noteEl.dataset.noteTarget;
-    if(targetId){
-      const body = document.getElementById(targetId);
-      if(body) body.classList.toggle("open");
-    }
-    return;
-  }
-
   const el = e.target.closest("[data-action]");
   if(!el) return;
   e.preventDefault();
