@@ -151,9 +151,11 @@ function migrateState(st){
       "Відділ № 7":"Відділ РТБС",
     };
     next.departments = next.departments.map(d=>{
-      if(!d || !d.name) return d;
-      const mapped = deptMap[d.name];
-      return mapped ? {...d, name: mapped} : d;
+      if(!d || typeof d !== "object") return d;
+      const mapped = d.name ? deptMap[d.name] : null;
+      const base = mapped ? {...d, name: mapped} : {...d};
+      if(typeof base.note !== "string") base.note = "";
+      return base;
     });
   }
 
@@ -357,13 +359,13 @@ function seed(){
     version: 4,
     session: { userId: null },
     departments: [
-      {id:"d1", name:"Відділ БАС"},
-      {id:"d2", name:"Відділ НРК"},
-      {id:"d3", name:"Відділ МБеС"},
-      {id:"d4", name:"Відділ БС"},
-      {id:"d5", name:"Відділ ІОЗ"},
-      {id:"d6", name:"Відділ КПЗБС"},
-      {id:"d7", name:"Відділ РТБС"},
+      {id:"d1", name:"Відділ БАС", note:""},
+      {id:"d2", name:"Відділ НРК", note:""},
+      {id:"d3", name:"Відділ МБеС", note:""},
+      {id:"d4", name:"Відділ БС", note:""},
+      {id:"d5", name:"Відділ ІОЗ", note:""},
+      {id:"d6", name:"Відділ КПЗБС", note:""},
+      {id:"d7", name:"Відділ РТБС", note:""},
     ],
     users: [
       {id:"u_boss", login:"boss", pass:"1234", name:"Керівник", role:"boss", departmentId:null, active:true},
@@ -2343,6 +2345,11 @@ function openDeptAnalytics(deptId, periodKey="week"){
     if(totalBlockerReasons > 0) return "Висновок: є повторювані блокери — перевірити причини і зняти ризики.";
     return "Висновок: відділ працює стабільно, критичних сигналів не виявлено.";
   })();
+  const noteText = (dept.note || "").trim();
+  const noteHtml = htmlesc(noteText || "—");
+  const noteEditBtn = !u.readOnly
+    ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${deptId}">✏️ Редагувати</button>`
+    : "";
 
   const periodChips = `
     <div class="chips task-chips" style="margin-top:8px;">
@@ -2437,6 +2444,14 @@ function openDeptAnalytics(deptId, periodKey="week"){
       <div class="report-meta">${conclusion}</div>
     </div>
 
+    <div class="report-section">
+      <div class="report-title">Примітка</div>
+      <div class="report-meta report-note">
+        <span class="note-text">${noteHtml}</span>
+        ${noteEditBtn}
+      </div>
+    </div>
+
     <div class="sep"></div>
     <button class="btn primary" data-action="hideSheet">Закрити</button>
   `);
@@ -2509,18 +2524,28 @@ function openAllDeptReport(periodKey="week"){
   `;
 
   const deptListHtml = deptRows.length
-    ? `<ul class="report-list">` + deptRows.map(r=>`
-        <li>
-          <div class="report-line">
-            <span class="report-strong">${htmlesc(r.dept.name)}</span>
-            <span class="badge b-blue">Активні ${r.active}</span>
-            <span class="badge b-warn">Блокери ${r.blockers}</span>
-            <span class="badge b-danger">Прострочені ${r.overdue}</span>
-            <span class="badge b-ok">Закрито ${r.closed}</span>
-          </div>
-          <div class="report-meta">В строк: <b>${r.onTime}</b>${r.closedWithDue ? ` (${pct(r.onTime, r.closedWithDue)}%)` : ""} • Прострочено при закритті: <b>${r.late}</b>${r.closedWithDue ? ` (${pct(r.late, r.closedWithDue)}%)` : ""}</div>
-        </li>
-      `).join("") + `</ul>`
+    ? `<ul class="report-list">` + deptRows.map(r=>{
+        const noteShort = shorten((r.dept.note || "").trim(), 160);
+        const editBtn = !u.readOnly
+          ? `<button class="btn ghost btn-mini" data-action="openDeptNote" data-arg1="${r.dept.id}">✏️ Примітка</button>`
+          : "";
+        return `
+          <li>
+            <div class="report-line">
+              <span class="report-strong">${htmlesc(r.dept.name)}</span>
+              <span class="badge b-blue">Активні ${r.active}</span>
+              <span class="badge b-warn">Блокери ${r.blockers}</span>
+              <span class="badge b-danger">Прострочені ${r.overdue}</span>
+              <span class="badge b-ok">Закрито ${r.closed}</span>
+            </div>
+            <div class="report-meta">В строк: <b>${r.onTime}</b>${r.closedWithDue ? ` (${pct(r.onTime, r.closedWithDue)}%)` : ""} • Прострочено при закритті: <b>${r.late}</b>${r.closedWithDue ? ` (${pct(r.late, r.closedWithDue)}%)` : ""}</div>
+            <div class="report-meta report-note">
+              <span class="note-text">Примітка: ${htmlesc(noteShort)}</span>
+              ${editBtn}
+            </div>
+          </li>
+        `;
+      }).join("") + `</ul>`
     : `<div class="hint">Немає даних по відділах.</div>`;
 
   const personalBlock = !u.readOnly ? `
@@ -2681,6 +2706,47 @@ function openReportStatusTasks(filterKey, periodKey="week"){
 /* ===========================
    DEPT SUMMARY FORM
 =========================== */
+function openDeptNote(deptId){
+  const u = currentSessionUser();
+  if(!u) return;
+  const dept = getDeptById(deptId);
+  if(!dept) return;
+  const {isDeptHeadLike} = asDeptRole(u);
+  const canEdit = !u.readOnly && (u.role==="boss" || (isDeptHeadLike && u.departmentId===deptId));
+  if(!canEdit){
+    showSheet("Немає прав", `<div class="hint">Тільки керівник або начальник відділу (в.о.) може редагувати примітку.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  showSheet(`Примітка — ${htmlesc(dept.name)}`, `
+    <div class="field">
+      <label>Примітка</label>
+      <textarea id="deptNoteText" maxlength="600" placeholder="Коротка примітка по відділу…">${htmlesc(dept.note || "")}</textarea>
+    </div>
+    <div class="hint">Ліміт: 600 символів.</div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="saveDeptNoteNow" data-arg1="${deptId}">Зберегти</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function saveDeptNoteNow(deptId){
+  const u = currentSessionUser();
+  if(!u) return;
+  const dept = getDeptById(deptId);
+  if(!dept) return;
+  const {isDeptHeadLike} = asDeptRole(u);
+  const canEdit = !u.readOnly && (u.role==="boss" || (isDeptHeadLike && u.departmentId===deptId));
+  if(!canEdit){
+    showSheet("Немає прав", `<div class="hint">Тільки керівник або начальник відділу (в.о.) може редагувати примітку.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const text = document.getElementById("deptNoteText")?.value.trim() || "";
+  dept.note = text;
+  saveState(STATE);
+  hideSheet();
+  render();
+}
+
 function openDeptSummaryForm(){
   const u = currentSessionUser();
   const {isDeptHeadLike} = asDeptRole(u);
@@ -2891,6 +2957,29 @@ function viewReports(){
     <div class="sep"></div>
   ` : ``;
 
+  const deptNoteBlock = (()=> {
+    if(u.role === "boss") return "";
+    const dept = getDeptById(u.departmentId);
+    if(!dept) return "";
+    const {isDeptHeadLike} = asDeptRole(u);
+    const noteText = (dept.note || "").trim() || "—";
+    const editBtn = (!u.readOnly && isDeptHeadLike)
+      ? `<button class="btn ghost" data-action="openDeptNote" data-arg1="${dept.id}">✏️ Редагувати</button>`
+      : "";
+    return `
+      <div class="item" style="cursor:default;">
+        <div class="row">
+          <div>
+            <div class="name">📝 Примітка відділу</div>
+            <div class="hint" style="margin-top:8px; white-space:pre-wrap;">${htmlesc(noteText)}</div>
+          </div>
+          ${editBtn}
+        </div>
+      </div>
+      <div class="sep"></div>
+    `;
+  })();
+
   const listReports = reports.length ? reports.map(r=>{
     const usr = getUserById(r.userId);
     const dept = getDeptById(r.departmentId);
@@ -2949,6 +3038,7 @@ function viewReports(){
         <div class="sep"></div>
 
         ${controlBlock}
+        ${deptNoteBlock}
 
         <div class="item" style="cursor:default;">
           <div class="row"><div class="name">🧾 Підсумки відділів</div><span class="badge b-violet mono">${sums.length}</span></div>
@@ -6779,6 +6869,7 @@ const ACTIONS = {
   openDeptPeopleBoss,
   openDeptAnalytics,
   openAllDeptReport,
+  openDeptNote,
   openDeptSummary,
   openDeptSummaryForm,
   openControlByDept,
@@ -6815,6 +6906,7 @@ const ACTIONS = {
   setTaskFilter,
   setTaskStatus,
   submitDeptSummaryNow,
+  saveDeptNoteNow,
   submitReportNow,
   submitStatusReason,
   exportTasksExcelNow,
@@ -6864,11 +6956,13 @@ const READONLY_BLOCKED_ACTIONS = new Set([
   "openCreateAnnouncement",
   "openCreateTask",
   "openDelegationCreate",
+  "openDeptNote",
   "openDeptSummaryForm",
   "openEditTask",
   "openMeetingRepeat",
   "openReportForm",
   "saveAnnouncementEdits",
+  "saveDeptNoteNow",
   "saveTaskEdits",
   "setControlDate",
   "setMeetingRepeatTomorrow",

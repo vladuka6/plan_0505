@@ -897,6 +897,17 @@
     }
     .report-strong{font-weight:900;color:var(--text);}
     .report-meta{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4;}
+    .report-note{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+    }
+    .report-note .note-text{
+      flex:1;
+      min-width:0;
+      white-space:pre-wrap;
+    }
     .report-details summary{
       list-style:none;
       cursor:pointer;
@@ -1279,6 +1290,30 @@
       }
       .task-item.is-blocker .task-token.token-status.compact-hide .token-text{display:inline;}
       .task-item.is-blocker .task-token.token-status .token-ico{display:inline;}
+    }
+    @media (max-width: 640px) and (orientation: portrait){
+      .task-item.announcement-item .task-line{
+        flex-wrap:wrap;
+      }
+      .task-item.announcement-item .task-title{
+        width:100%;
+      }
+      .task-item.announcement-item .task-title .name{
+        font-size:12px;
+        line-height:1.2;
+        white-space:normal;
+        overflow:visible;
+        text-overflow:clip;
+        overflow-wrap:anywhere;
+      }
+      .task-item.announcement-item .task-meta{
+        width:100%;
+        justify-content:flex-start;
+      }
+      .task-item.announcement-item .task-search-meta,
+      .task-item.announcement-item .ann-meta{
+        font-size:11px;
+      }
     }
     .analytics-grid{display:none;gap:12px;}
     .analytics-block{padding:12px;}
