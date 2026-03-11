@@ -3561,7 +3561,7 @@ function viewWeeklyTasks(){
     </div>
   `;
   const body = `
-    <div class="card">
+    <div class="card task-card">
       <div class="card-h">
         <div class="t">Задачі за тиждень</div>
         ${headerActions}
