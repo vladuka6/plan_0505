@@ -4122,7 +4122,7 @@ function viewTasks(){
       const canEditNote = !!deptObj && !u.readOnly;
       const showNoteToggle = !!deptObj && (noteRaw || canEditNote);
       const noteToggleBtn = showNoteToggle
-        ? `<button class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-open="1" data-note-target="dept-note-${deptObj.id}" data-dept-id="${deptObj.id}" title="Примітка">✏️</button>`
+        ? `<button type="button" class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-open="1" data-note-target="dept-note-${deptObj.id}" data-dept-id="${deptObj.id}" title="Примітка">✏️</button>`
         : "";
       const noteBody = (deptObj && noteRaw) ? `
         <div class="dept-note-body" id="dept-note-${deptObj.id}">${htmlesc(noteRaw)}</div>
@@ -4205,7 +4205,7 @@ function viewTasks(){
     const noteRaw = (dept.note || "").trim();
     const canEditNote = !u.readOnly;
     if(!noteRaw && !canEditNote) return "";
-    return `<button class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-open="1" data-note-target="dept-note-${dept.id}" data-dept-id="${dept.id}" title="Примітка">✏️</button>`;
+    return `<button type="button" class="btn ghost btn-mini dept-note-btn" data-note-toggle="1" data-note-open="1" data-note-target="dept-note-${dept.id}" data-dept-id="${dept.id}" title="Примітка">✏️</button>`;
   })();
 
   const canSeeMeetingAnnouncements = (u.role==="boss") || isDeptHeadLike;
@@ -7150,6 +7150,7 @@ document.addEventListener("click", (e)=>{
     if(e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
     const targetId = noteEl.dataset.noteTarget;
     if(targetId){
       const body = document.getElementById(targetId);
@@ -7173,6 +7174,8 @@ document.addEventListener("dblclick", (e)=>{
   if(!noteEl) return;
   if(e.button !== 0) return;
   e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
   const deptId = noteEl.dataset.deptId;
   if(deptId) runMappedAction("openDeptNote", deptId);
 });
