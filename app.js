@@ -3911,7 +3911,9 @@ function viewTasks(){
     const noteRaw = (dept.note || "").trim();
     const canEditNote = !u.readOnly;
     if(!noteRaw && !canEditNote) return "";
-    const tip = noteRaw ? `<div class="dept-note-pop"><div class="rich-text">${richText(noteRaw)}</div></div>` : "";
+    const tip = noteRaw
+      ? `<span class="dept-note-inline" title="${htmlesc(noteRaw)}"><span class="dept-note-label">Примітка:</span><span class="dept-note-text rich-text">${richText(noteRaw)}</span></span>`
+      : "";
     return `
       <span class="dept-note-tip">
         <button type="button" class="btn ghost btn-mini dept-note-btn" data-action="openDeptNote" data-arg1="${dept.id}" title="Примітка">✏️</button>
@@ -4395,6 +4397,7 @@ function viewTasks(){
     document.querySelectorAll(".dept-chips .chip").forEach((el)=>{
       el.addEventListener("dblclick", (e)=>{
         if(e.button !== 0) return;
+        if(el.dataset.action === "setTaskDeptFilter") return;
         fab.click();
       });
     });
@@ -5360,7 +5363,7 @@ function toggleDeptAll(){
   refreshRespOptions();
 }
 
-function openCreateTask(kind){
+function openCreateTask(kind, preselectDeptId=null){
   const u = currentSessionUser();
   const {isDeptHeadLike} = asDeptRole(u);
 
@@ -5577,9 +5580,21 @@ function openCreateTask(kind){
   toggleRecurrenceEnabled();
   toggleRecurrenceType();
   if(!isPersonal){
-    const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
-    if(multiToggles.length && !multiToggles.some(x=>x.checked)){
-      multiToggles[0].checked = true;
+    if(isManagerial){
+      const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
+      if(multiToggles.length){
+        if(preselectDeptId){
+          multiToggles.forEach(t=>{ t.checked = (t.value === preselectDeptId); });
+        }
+        if(!multiToggles.some(x=>x.checked)){
+          multiToggles[0].checked = true;
+        }
+      }
+    } else {
+      const deptSel = document.getElementById("tDept");
+      if(deptSel && preselectDeptId){
+        deptSel.value = preselectDeptId;
+      }
     }
     refreshRespOptions();
   }
@@ -7084,6 +7099,28 @@ function initOverdueTicker(){
 }
 
 document.addEventListener("click", (e)=>{
+  const deptChip = e.target.closest('[data-action="setTaskDeptFilter"]');
+  if(deptChip){
+    const deptId = deptChip.dataset.arg1 || "";
+    const u = currentSessionUser();
+    if(u && u.role==="boss" && UI.taskDeptFilter==="all" && deptId && deptId!=="all" && deptId!=="personal"){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      setTaskDeptFilter(deptId);
+      openCreateTask("managerial", deptId);
+      return;
+    }
+  }
+
+  const deptNote = e.target.closest(".dept-note-inline");
+  if(deptNote){
+    e.preventDefault();
+    e.stopPropagation();
+    deptNote.classList.toggle("is-expanded");
+    return;
+  }
+
   const el = e.target.closest("[data-action]");
   if(!el) return;
   e.preventDefault();
