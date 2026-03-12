@@ -2697,10 +2697,10 @@ function openDeptNote(deptId){
   showSheet(`Примітка — ${htmlesc(dept.name)}`, `
     <div class="field">
       <label>Примітка</label>
-      <textarea id="deptNoteText" maxlength="600" placeholder="Коротка примітка по відділу…">${htmlesc(dept.note || "")}</textarea>
+      <textarea id="deptNoteText" placeholder="Коротка примітка по відділу…">${htmlesc(dept.note || "")}</textarea>
       ${formatToolbar("deptNoteText", "inline")}
     </div>
-    <div class="hint">Ліміт: 600 символів.</div>
+    <div class="hint">Без ліміту символів.</div>
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="saveDeptNoteNow" data-arg1="${deptId}">Зберегти</button>
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
@@ -5536,11 +5536,8 @@ function openCreateTask(kind, preselectDeptId=null){
           <div id="recWeekly" class="rec-toggle-grid">
             ${days.map(d=>`
               <label class="rec-toggle">
+                <input type="checkbox" name="recDay" value="${d.v}" />
                 <span class="rec-label">${d.label}</span>
-                <span class="switch">
-                  <input type="checkbox" name="recDay" value="${d.v}" />
-                  <span class="slider"></span>
-                </span>
               </label>
             `).join("")}
           </div>
