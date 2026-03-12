@@ -3905,18 +3905,23 @@ function viewTasks(){
   const closedCount = (showTasks ? tasks.filter(t=>t.status==="закрито" || t.status==="скасовано").length : 0)
     + (showAnns ? announcements.filter(t=>t.status==="закрито" || t.status==="скасовано").length : 0);
   const deptNoteActionBtn = (()=> {
-    if(u.role!=="boss" || deptFilter==="all" || deptFilter==="personal") return "";
-    const dept = getDeptById(deptFilter);
+    const deptId = (u.role === "boss") ? deptFilter : u.departmentId;
+    if(!deptId || deptId==="all" || deptId==="personal") return "";
+    const dept = getDeptById(deptId);
     if(!dept) return "";
     const noteRaw = (dept.note || "").trim();
-    const canEditNote = !u.readOnly;
+    const {isDeptHeadLike} = asDeptRole(u);
+    const canEditNote = !u.readOnly && (u.role==="boss" || (isDeptHeadLike && u.departmentId===deptId));
     if(!noteRaw && !canEditNote) return "";
     const tip = noteRaw
       ? `<span class="dept-note-inline" title="${htmlesc(noteRaw)}"><span class="dept-note-label">Примітка:</span><span class="dept-note-text rich-text">${richText(noteRaw)}</span></span>`
       : "";
+    const editBtn = canEditNote
+      ? `<button type="button" class="btn ghost btn-mini dept-note-btn" data-action="openDeptNote" data-arg1="${dept.id}" title="Примітка">✏️</button>`
+      : "";
     return `
       <span class="dept-note-tip">
-        <button type="button" class="btn ghost btn-mini dept-note-btn" data-action="openDeptNote" data-arg1="${dept.id}" title="Примітка">✏️</button>
+        ${editBtn}
         ${tip}
       </span>
     `;
