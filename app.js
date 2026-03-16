@@ -1750,7 +1750,11 @@ modal.addEventListener("click", (e)=>{ if(e.target === modal) hideSheet(); });
 function showSheet(title, html, opts={}){
   const useStack = !!opts.stack || _sheetStackOn;
   if(useStack && modal.classList.contains("show")){
-    _sheetStack.push({title: sheetTitle.textContent, html: sheetBody.innerHTML});
+    _sheetStack.push({
+      title: sheetTitle.textContent,
+      html: sheetBody.innerHTML,
+      scrollTop: sheetBody.scrollTop || 0
+    });
     _sheetStackOn = true;
   }
   sheetTitle.textContent = title;
@@ -1762,6 +1766,7 @@ function hideSheet(){
     const prev = _sheetStack.pop();
     sheetTitle.textContent = prev.title;
     sheetBody.innerHTML = prev.html;
+    sheetBody.scrollTop = prev.scrollTop || 0;
     modal.classList.add("show");
     if(_sheetStack.length === 0) _sheetStackOn = false;
     return;
