@@ -553,6 +553,7 @@ function richText(s){
   if(!safe) return "";
   let out = safe;
   out = out.replace(/__(.+?)__/g, "<u>$1</u>");
+  out = out.replace(/~~(.+?)~~/g, "<s>$1</s>");
   out = out.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   out = out.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<i>$2</i>");
   return out;
@@ -564,13 +565,14 @@ function formatToolbar(textareaId, variant=""){
       <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="bold" title="Жирний (**текст**)"><span class="format-ico">B</span></button>
       <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="italic" title="Курсив (*текст*)"><span class="format-ico"><i>I</i></span></button>
       <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="underline" title="Підкреслення (__текст__)"><span class="format-ico"><u>U</u></span></button>
+      <button class="format-chip" data-action="applyTextFormat" data-arg1="${textareaId}" data-arg2="strike" title="Перекреслення (~~текст~~)"><span class="format-ico"><s>S</s></span></button>
     </div>
   `;
 }
 function applyTextFormat(textareaId, type){
   const el = document.getElementById(textareaId);
   if(!el) return;
-  const wrap = (type==="bold") ? "**" : (type==="italic" ? "*" : "__");
+  const wrap = (type==="bold") ? "**" : (type==="italic" ? "*" : (type==="strike" ? "~~" : "__"));
   const start = el.selectionStart ?? 0;
   const end = el.selectionEnd ?? 0;
   const val = el.value || "";
