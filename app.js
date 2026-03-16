@@ -116,6 +116,16 @@ function migrateState(st){
     reportPlans: Array.isArray(st.reportPlans) ? st.reportPlans : [],
     sync: (st.sync && typeof st.sync === "object") ? st.sync : null,
   };
+  if(Array.isArray(next.reportPlans)){
+    next.reportPlans = next.reportPlans.map(p=>{
+      if(!p || typeof p !== "object") return p;
+      const days = Array.isArray(p.daysOfMonth) ? p.daysOfMonth : [];
+      const legacy = Number(p.dayOfMonth);
+      const daysOfMonth = days.length ? days : (Number.isFinite(legacy) ? [legacy] : []);
+      const weekDays = Array.isArray(p.weekDays) ? p.weekDays : [];
+      return {...p, daysOfMonth, weekDays};
+    });
+  }
   if(Array.isArray(next.users)){
     const hasViewer = next.users.some(u=>u && u.login==="viewer");
     if(!hasViewer){
@@ -358,47 +368,79 @@ function reportPlanDateForMonth(dayOfMonth, monthStr){
   const day = Math.max(1, Math.min(Number(dayOfMonth) || 1, daysInMonth(monthStr)));
   return `${monthStr}-${String(day).padStart(2,'0')}`;
 }
+function reportPlanScheduleDates(plan, monthStr){
+  const dates = new Set();
+  const days = Array.isArray(plan?.daysOfMonth) ? plan.daysOfMonth : (Number.isFinite(Number(plan?.dayOfMonth)) ? [Number(plan.dayOfMonth)] : []);
+  days.forEach(d=>{
+    const date = reportPlanDateForMonth(d, monthStr);
+    if(date) dates.add(date);
+  });
+  const weekDays = Array.isArray(plan?.weekDays) ? plan.weekDays : [];
+  if(weekDays.length){
+    const [y,m] = monthStr.split("-").map(Number);
+    const total = daysInMonth(monthStr);
+    for(let d=1; d<=total; d++){
+      const dow = new Date(y, m-1, d).getDay();
+      if(weekDays.includes(dow)){
+        dates.add(`${monthStr}-${String(d).padStart(2,'0')}`);
+      }
+    }
+  }
+  return Array.from(dates).sort();
+}
+function reportPlanTaskDate(t){
+  if(!t) return null;
+  if(t.reportPlanDate) return t.reportPlanDate;
+  if(t.dueDate) return splitDateTime(t.dueDate).date || toDateOnly(t.dueDate);
+  if(t.startDate) return t.startDate;
+  return null;
+}
+function reportPlanTaskMatches(t, planId, monthStr, deptId, date){
+  if(!t) return false;
+  if(t.reportPlanId !== planId) return false;
+  if(t.reportMonth !== monthStr) return false;
+  if(t.departmentId !== deptId) return false;
+  const tDate = reportPlanTaskDate(t);
+  return tDate === date;
+}
 function runReportPlans(){
   if(!STATE.reportPlans) STATE.reportPlans = [];
   const today = kyivDateStr();
   const monthStr = today.slice(0,7);
 
   STATE.reportPlans.forEach(plan=>{
-    const day = Number(plan?.dayOfMonth);
-    if(!Number.isFinite(day) || day < 1) return;
-    const scheduledDate = reportPlanDateForMonth(day, monthStr);
-    if(today < scheduledDate) return;
-
+    const scheduleDates = reportPlanScheduleDates(plan, monthStr);
+    if(!scheduleDates.length) return;
     const deptIds = Array.isArray(plan.deptIds) ? plan.deptIds : [];
-    deptIds.forEach(deptId=>{
-      if(!deptId) return;
-      const exists = STATE.tasks.some(t=>
-        t.reportPlanId === plan.id &&
-        t.reportMonth === monthStr &&
-        t.departmentId === deptId
-      );
-      if(exists) return;
-      const headId = effectiveDeptHeadUserId(deptId);
-      const respId = headId || getDeptResponsibleOptions(deptId)[0]?.id || "u_boss";
-      createTask({
-        id: genTaskCode("I"),
-        type: "internal",
-        title: plan.title,
-        description: plan.description || "",
-        departmentId: deptId,
-        responsibleUserId: respId,
-        complexity: plan.complexity || "середня",
-        status: "в_процесі",
-        startDate: scheduledDate,
-        dueDate: scheduledDate,
-        nextControlDate: null,
-        controlAlways: false,
-        createdBy: plan.createdBy || "u_boss",
-        createdAt: nowIsoKyiv(),
-        updatedAt: nowIsoKyiv(),
-        reportPlanId: plan.id,
-        reportMonth: monthStr,
-      }, plan.createdBy || "u_boss");
+    scheduleDates.forEach(scheduledDate=>{
+      if(today < scheduledDate) return;
+      deptIds.forEach(deptId=>{
+        if(!deptId) return;
+        const exists = STATE.tasks.some(t=>reportPlanTaskMatches(t, plan.id, monthStr, deptId, scheduledDate));
+        if(exists) return;
+        const headId = effectiveDeptHeadUserId(deptId);
+        const respId = headId || getDeptResponsibleOptions(deptId)[0]?.id || "u_boss";
+        createTask({
+          id: genTaskCode("I"),
+          type: "internal",
+          title: plan.title,
+          description: plan.description || "",
+          departmentId: deptId,
+          responsibleUserId: respId,
+          complexity: plan.complexity || "середня",
+          status: "в_процесі",
+          startDate: scheduledDate,
+          dueDate: scheduledDate,
+          nextControlDate: null,
+          controlAlways: false,
+          createdBy: plan.createdBy || "u_boss",
+          createdAt: nowIsoKyiv(),
+          updatedAt: nowIsoKyiv(),
+          reportPlanId: plan.id,
+          reportMonth: monthStr,
+          reportPlanDate: scheduledDate,
+        }, plan.createdBy || "u_boss");
+      });
     });
   });
 }
@@ -408,6 +450,24 @@ function monthRangeFor(dateStr){
   const dt = new Date(y, m, 0);
   const to = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
   return {from, to};
+}
+function monthsBetween(from, to){
+  if(!from || !to) return [];
+  const [fy, fm] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  if(!fy || !fm || !ty || !tm) return [];
+  const out = [];
+  let y = fy;
+  let m = fm;
+  while (y < ty || (y === ty && m <= tm)){
+    out.push(`${y}-${String(m).padStart(2,'0')}`);
+    m += 1;
+    if(m > 12){
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
 }
 
 function seed(){
@@ -1448,7 +1508,7 @@ function openTasksExportDialog(){
   }
   const today = kyivDateStr();
   showSheet("Експорт задач у Excel", `
-    <div class="hint">Буде сформовано книгу Excel: окремі вкладки по відділах і <b>Особисті</b>, та вкладки <b>Аналітика (візуально)</b> + <b>Аналітика (таблично)</b>. Колонка <b>Оновлення</b> містить усю історію (обрізано).</div>
+    <div class="hint">Буде сформовано книгу Excel: окремі вкладки по відділах і <b>Особисті</b>, вкладки <b>Аналітика (візуально)</b> + <b>Аналітика (таблично)</b> та вкладки <b>Звітність YYYY-MM</b> для кожного місяця у періоді. Колонка <b>Оновлення</b> містить усю історію (обрізано).</div>
     <div class="row2">
       <div class="field">
         <label>Від дати</label>
@@ -1465,6 +1525,60 @@ function openTasksExportDialog(){
     </div>
   `);
 }
+function reportingMissingLabel(monthStr, scheduledDate){
+  const today = kyivDateStr();
+  const currentMonth = today.slice(0,7);
+  const isPastMonth = monthStr < currentMonth;
+  const shouldExist = isPastMonth || ((monthStr === currentMonth) && (today >= scheduledDate));
+  return shouldExist ? "Не створено" : "Заплановано";
+}
+function reportingExportRows(monthStr){
+  const plans = (STATE.reportPlans || []).slice().sort((a,b)=>{
+    const da = Array.isArray(a.daysOfMonth) && a.daysOfMonth.length ? Math.min(...a.daysOfMonth) : (Number(a.dayOfMonth) || 0);
+    const db = Array.isArray(b.daysOfMonth) && b.daysOfMonth.length ? Math.min(...b.daysOfMonth) : (Number(b.dayOfMonth) || 0);
+    if(da !== db) return da - db;
+    return (a.title || "").localeCompare(b.title || "");
+  });
+  const rows = [];
+  plans.forEach(plan=>{
+    const deptIds = Array.isArray(plan.deptIds) ? plan.deptIds : [];
+    const scheduleDates = reportPlanScheduleDates(plan, monthStr);
+    const planTasks = STATE.tasks.filter(t=>t.reportPlanId===plan.id && t.reportMonth===monthStr);
+    const taskMap = new Map();
+    planTasks.forEach(t=>{
+      const d = reportPlanTaskDate(t);
+      if(!d) return;
+      const key = `${t.departmentId || ""}__${d}`;
+      if(!taskMap.has(key)) taskMap.set(key, t);
+    });
+    const weekLabels = ["Нд","Пн","Вт","Ср","Чт","Пт","Сб"];
+    const weekDayList = Array.isArray(plan.weekDays) ? plan.weekDays : [];
+    const weekLabelText = weekDayList.length ? weekDayList.map(x=>weekLabels[x] || "").filter(Boolean).join(", ") : "";
+    deptIds.forEach(deptId=>{
+      const dept = getDeptById(deptId);
+      scheduleDates.forEach(date=>{
+        const task = taskMap.get(`${deptId}__${date}`) || null;
+        const closeDate = task ? getCloseDateForTask(task) : null;
+        const status = task ? statusLabel(task.status) : reportingMissingLabel(monthStr, date);
+        const closedInMonth = closeDate && closeDate.startsWith(monthStr) ? "так" : "ні";
+        rows.push([
+          monthStr,
+          plan.title || "",
+          plan.description || "",
+          Array.isArray(plan.daysOfMonth) && plan.daysOfMonth.length ? plan.daysOfMonth.join(",") : (Number(plan.dayOfMonth) || ""),
+          weekLabelText,
+          date,
+          dept?.name || "",
+          status,
+          closeDate ? fmtDate(closeDate) : "",
+          closedInMonth,
+          task?.id || ""
+        ]);
+      });
+    });
+  });
+  return rows;
+}
 function exportTasksExcelNow(){
   const from = document.getElementById("expFrom")?.value;
   const to = document.getElementById("expTo")?.value;
@@ -1475,6 +1589,8 @@ function exportTasksExcelNow(){
 
   const visible = getVisibleTasksForUser(currentSessionUser()).filter(t=>taskInPeriod(t, from, to));
   const header = ["№","Код","Назва","Тип","Статус","Старт","Дедлайн","Контроль","Складність","Відповідальний","Оновлено","Оновлення","Створив"];
+  const reportingHeader = ["Місяць","Захід","Опис","Дні місяця","Дні тижня","Планова дата","Відділ","Статус","Дата закриття","Закрито в місяці","ID задачі"];
+  const reportMonths = monthsBetween(from, to);
   const groups = [
     ...STATE.departments.map(d=>({name: d.name, id: d.id})),
     {name: "Особисті", id: "personal"}
@@ -1510,6 +1626,10 @@ function exportTasksExcelNow(){
     addSheet("Оголошення (керівництво)", header, taskExportRowsFull(meetingAnnouncements));
     addSheetRaw("Аналітика (візуально)", buildAnalyticsRows());
     addSheetRaw("Аналітика (таблично)", buildAnalyticsTableRows());
+    reportMonths.forEach(m=>{
+      const rows = reportingExportRows(m);
+      addSheet(`Звітність ${m}`, reportingHeader, rows);
+    });
 
     XLSX.writeFile(wb, `tasks_${from}_${to}.xlsx`, {cellStyles:true});
     hideSheet();
@@ -1528,6 +1648,10 @@ function exportTasksExcelNow(){
   sheets.push(buildWorksheetXml("Оголошення (керівництво)", header, taskExportRowsFull(meetingAnnouncements)));
   sheets.push(buildWorksheetXmlRaw("Аналітика (візуально)", buildAnalyticsRows()));
   sheets.push(buildWorksheetXmlRaw("Аналітика (таблично)", buildAnalyticsTableRows()));
+  reportMonths.forEach(m=>{
+    const rows = reportingExportRows(m);
+    sheets.push(buildWorksheetXml(`Звітність ${m}`, reportingHeader, rows));
+  });
   const xml = buildTasksWorkbookXml(sheets);
   downloadExcelXml(`tasks_${from}_${to}.xml`, xml);
   hideSheet();
@@ -2893,18 +3017,36 @@ function setReportingMonthFromInput(){
 }
 function renderReportPlanDeptChecks(selectedIds){
   const selected = new Set(Array.isArray(selectedIds) ? selectedIds : []);
-  return STATE.departments.map(d=>`
-    <label class="check">
-      <input type="checkbox" name="rpDept" value="${d.id}" ${selected.has(d.id) ? "checked" : ""} />
-      ${htmlesc(d.name)}
-    </label>
-  `).join("");
+  return `
+    <div class="dept-toggle-grid">
+      ${STATE.departments.map(d=>`
+        <label class="dept-toggle">
+          <span class="dept-name">${htmlesc(d.name)}</span>
+          <span class="switch">
+            <input type="checkbox" name="rpDept" value="${d.id}" ${selected.has(d.id) ? "checked" : ""} />
+            <span class="slider"></span>
+          </span>
+        </label>
+      `).join("")}
+    </div>
+  `;
 }
 function reportPlanFormHtml(plan=null){
   const title = plan?.title || "";
   const desc = plan?.description || "";
-  const day = Number(plan?.dayOfMonth) || 1;
+  const daySet = new Set(Array.isArray(plan?.daysOfMonth) ? plan.daysOfMonth : (Number.isFinite(Number(plan?.dayOfMonth)) ? [Number(plan.dayOfMonth)] : []));
+  const weekSet = new Set(Array.isArray(plan?.weekDays) ? plan.weekDays : []);
   const deptChecks = renderReportPlanDeptChecks(plan?.deptIds || []);
+  const monthDays = Array.from({length:31}, (_,i)=>i+1);
+  const weekDays = [
+    {v:1, label:"Пн"},
+    {v:2, label:"Вт"},
+    {v:3, label:"Ср"},
+    {v:4, label:"Чт"},
+    {v:5, label:"Пт"},
+    {v:6, label:"Сб"},
+    {v:0, label:"Нд"},
+  ];
   return `
     <div class="field">
       <label>Назва заходу</label>
@@ -2918,13 +3060,31 @@ function reportPlanFormHtml(plan=null){
       <textarea id="rpDesc" placeholder="Деталі / очікуваний результат">${htmlesc(desc)}</textarea>
     </div>
     <div class="field">
-      <label>День місяця</label>
-      <input id="rpDay" type="number" min="1" max="31" value="${day}" />
-      <div class="hint">Якщо в місяці менше днів — ставимо на останній день.</div>
+      <label>Дати місяця</label>
+      <div class="rec-toggle-grid monthday-grid">
+        ${monthDays.map(d=>`
+          <label class="rec-toggle">
+            <input type="checkbox" name="rpDay" value="${d}" ${daySet.has(d) ? "checked" : ""} />
+            <span class="rec-label">${d}</span>
+          </label>
+        `).join("")}
+      </div>
+      <div class="hint">Можна обрати кілька. Якщо в місяці менше днів — ставимо на останній день.</div>
+    </div>
+    <div class="field">
+      <label>Дні тижня (за потреби)</label>
+      <div class="rec-toggle-grid">
+        ${weekDays.map(d=>`
+          <label class="rec-toggle">
+            <input type="checkbox" name="rpWeekday" value="${d.v}" ${weekSet.has(d.v) ? "checked" : ""} />
+            <span class="rec-label">${d.label}</span>
+          </label>
+        `).join("")}
+      </div>
     </div>
     <div class="field">
       <label>Відділи</label>
-      <div class="dept-multi">${deptChecks}</div>
+      ${deptChecks}
     </div>
   `;
 }
@@ -2960,9 +3120,14 @@ function saveReportPlanNow(planId){
     showSheet("Помилка", `<div class="hint">Вкажи назву заходу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
-  const day = Number(document.getElementById("rpDay")?.value || "");
-  if(!Number.isFinite(day) || day < 1 || day > 31){
-    showSheet("Помилка", `<div class="hint">Вкажи коректний день місяця (1–31).</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+  const daysOfMonth = [...document.querySelectorAll('input[name="rpDay"]:checked')]
+    .map(x=>Number(x.value))
+    .filter(n=>Number.isFinite(n) && n>=1 && n<=31);
+  const weekDays = [...document.querySelectorAll('input[name="rpWeekday"]:checked')]
+    .map(x=>Number(x.value))
+    .filter(n=>Number.isFinite(n) && n>=0 && n<=6);
+  if(!daysOfMonth.length && !weekDays.length){
+    showSheet("Помилка", `<div class="hint">Обери хоча б одну дату або день тижня.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
   const deptIds = [...document.querySelectorAll('input[name="rpDept"]:checked')]
@@ -2983,7 +3148,8 @@ function saveReportPlanNow(planId){
       ...prev,
       title,
       description: desc,
-      dayOfMonth: day,
+      daysOfMonth: [...new Set(daysOfMonth)],
+      weekDays: [...new Set(weekDays)],
       deptIds: [...new Set(deptIds)],
       updatedAt: nowIsoKyiv(),
       updatedBy: u.id,
@@ -2993,7 +3159,8 @@ function saveReportPlanNow(planId){
       id: uid("rp"),
       title,
       description: desc,
-      dayOfMonth: day,
+      daysOfMonth: [...new Set(daysOfMonth)],
+      weekDays: [...new Set(weekDays)],
       deptIds: [...new Set(deptIds)],
       createdBy: u.id,
       createdAt: nowIsoKyiv(),
@@ -3345,8 +3512,8 @@ function viewReporting(){
   const currentMonth = today.slice(0,7);
 
   const plans = (STATE.reportPlans || []).slice().sort((a,b)=>{
-    const da = Number(a.dayOfMonth) || 0;
-    const db = Number(b.dayOfMonth) || 0;
+    const da = Array.isArray(a.daysOfMonth) && a.daysOfMonth.length ? Math.min(...a.daysOfMonth) : (Number(a.dayOfMonth) || 0);
+    const db = Array.isArray(b.daysOfMonth) && b.daysOfMonth.length ? Math.min(...b.daysOfMonth) : (Number(b.dayOfMonth) || 0);
     if(da !== db) return da - db;
     return (a.title || "").localeCompare(b.title || "");
   });
@@ -3358,54 +3525,62 @@ function viewReporting(){
     return closeDate && closeDate.startsWith(monthStr);
   }).length;
 
-  const totalPlanned = plans.reduce((s,p)=>s + (Array.isArray(p.deptIds) ? p.deptIds.length : 0), 0);
+  const totalPlanned = plans.reduce((s,p)=>{
+    const deptCount = Array.isArray(p.deptIds) ? p.deptIds.length : 0;
+    const datesCount = reportPlanScheduleDates(p, monthStr).length;
+    return s + (deptCount * (datesCount || 0));
+  }, 0);
 
   const planList = plans.length ? plans.map(plan=>{
     const deptIds = Array.isArray(plan.deptIds) ? plan.deptIds : [];
-    const scheduledDate = reportPlanDateForMonth(plan.dayOfMonth, monthStr);
+    const scheduleDates = reportPlanScheduleDates(plan, monthStr);
     const planTasks = tasksForMonth.filter(t=>t.reportPlanId===plan.id);
-    const tasksByDept = new Map(planTasks.map(t=>[t.departmentId, t]));
+    const taskMap = new Map();
+    planTasks.forEach(t=>{
+      const d = reportPlanTaskDate(t);
+      if(!d) return;
+      const key = `${t.departmentId || ""}__${d}`;
+      if(!taskMap.has(key)) taskMap.set(key, t);
+    });
     const closedInMonth = planTasks.filter(t=>{
       if(t.status !== "закрито") return false;
       const closeDate = getCloseDateForTask(t);
       return closeDate && closeDate.startsWith(monthStr);
     }).length;
 
-    const deptRows = deptIds.map(deptId=>{
+    const deptRows = deptIds.flatMap(deptId=>{
       const dept = getDeptById(deptId);
-      const task = tasksByDept.get(deptId) || null;
-      const closeDate = task ? getCloseDateForTask(task) : null;
-      const closedInMonth = !!(closeDate && closeDate.startsWith(monthStr));
-      const statusBadge = task
-        ? `<span class="badge ${statusBadgeClass(task.status)}">${statusIcon(task.status)} ${htmlesc(statusLabel(task.status))}</span>`
-        : `<span class="badge">Заплановано</span>`;
-      const taskDate = task?.dueDate ? (splitDateTime(task.dueDate).date || toDateOnly(task.dueDate)) : null;
-      const rowPlanDate = taskDate || scheduledDate;
-      const isPastMonth = monthStr < currentMonth;
-      const shouldExist = isPastMonth || ((monthStr === currentMonth) && (today >= scheduledDate));
-      const missingLabel = shouldExist ? "Не створено" : "Заплановано";
-      const statusBadgeFinal = task ? statusBadge : `<span class="badge">${missingLabel}</span>`;
-      const closePill = (task && task.status==="закрито" && closeDate)
-        ? `<span class="pill mono">${fmtDate(closeDate)}${closedInMonth ? "" : " (поза місяцем)"}</span>`
-        : ``;
-      const openAttr = task ? `data-action="openTask" data-arg1="${task.id}"` : "";
-      const cursor = task ? "" : "cursor:default;";
+      return scheduleDates.map(date=>{
+        const task = taskMap.get(`${deptId}__${date}`) || null;
+        const closeDate = task ? getCloseDateForTask(task) : null;
+        const closedInMonth = !!(closeDate && closeDate.startsWith(monthStr));
+        const statusBadge = task
+          ? `<span class="badge ${statusBadgeClass(task.status)}">${statusIcon(task.status)} ${htmlesc(statusLabel(task.status))}</span>`
+          : `<span class="badge">Заплановано</span>`;
+        const missingLabel = reportingMissingLabel(monthStr, date);
+        const statusBadgeFinal = task ? statusBadge : `<span class="badge">${missingLabel}</span>`;
+        const closePill = (task && task.status==="закрито" && closeDate)
+          ? `<span class="pill mono">${fmtDate(closeDate)}${closedInMonth ? "" : " (поза місяцем)"}</span>`
+          : ``;
+        const openAttr = task ? `data-action="openTask" data-arg1="${task.id}"` : "";
+        const cursor = task ? "" : "cursor:default;";
 
-      return `
-        <div class="item" ${openAttr} style="${cursor}">
-          <div class="row">
-            <div>
-              <div class="name">${deptBadgeHtml(dept)} ${htmlesc(dept?.name ?? "Відділ")}</div>
-              <div class="sub">
-                ${statusBadgeFinal}
-                <span class="pill">План: <span class="mono">${fmtDate(rowPlanDate)}</span></span>
-                ${closePill}
+        return `
+          <div class="item" ${openAttr} style="${cursor}">
+            <div class="row">
+              <div>
+                <div class="name">${deptBadgeHtml(dept)} ${htmlesc(dept?.name ?? "Відділ")}</div>
+                <div class="sub">
+                  ${statusBadgeFinal}
+                  <span class="pill">План: <span class="mono">${fmtDate(date)}</span></span>
+                  ${closePill}
+                </div>
               </div>
+              ${task ? `<div class="pill">›</div>` : ``}
             </div>
-            ${task ? `<div class="pill">›</div>` : ``}
           </div>
-        </div>
-      `;
+        `;
+      });
     }).join("");
 
     const desc = plan.description ? `<div class="hint rich-text" style="margin-top:10px;">${richText(plan.description)}</div>` : "";
@@ -3416,14 +3591,24 @@ function viewReporting(){
       </div>
     `;
 
+    const monthDayList = Array.isArray(plan.daysOfMonth) ? plan.daysOfMonth : [];
+    const weekDayList = Array.isArray(plan.weekDays) ? plan.weekDays : [];
+    const weekLabels = ["Нд","Пн","Вт","Ср","Чт","Пт","Сб"];
+    const weekLabelText = weekDayList.length ? weekDayList.map(x=>weekLabels[x] || "").filter(Boolean).join(", ") : "—";
+    const dayLabelText = monthDayList.length ? monthDayList.join(", ") : "—";
+    const schedulePills = scheduleDates.length
+      ? scheduleDates.map(d=>`<span class="pill mono">${fmtDate(d)}</span>`).join("")
+      : `<span class="pill">—</span>`;
+
     return `
       <div class="item" style="cursor:default;">
         <div class="row">
           <div>
             <div class="name">${htmlesc(plan.title || "Без назви")}</div>
             <div class="sub">
-              <span class="pill">День: <span class="mono">${Number(plan.dayOfMonth) || 1}</span></span>
-              <span class="pill mono">${fmtDate(scheduledDate)}</span>
+              <span class="pill">Дні місяця: <span class="mono">${htmlesc(dayLabelText)}</span></span>
+              <span class="pill">Дні тижня: <span class="mono">${htmlesc(weekLabelText)}</span></span>
+              ${schedulePills}
               <span class="pill">Відділів: <span class="mono">${deptIds.length}</span></span>
               <span class="pill">Створено: <span class="mono">${planTasks.length}</span></span>
               <span class="pill">Закрито в місяці: <span class="mono">${closedInMonth}</span></span>

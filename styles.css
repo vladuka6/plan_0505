@@ -660,7 +660,8 @@
       background: rgba(110,168,254,.18);
       color:#2d5fbd;
     }
-    .recurring-block .rec-toggle-grid{
+    .recurring-block .rec-toggle-grid,
+    .rec-toggle-grid{
       display:flex;
       flex-direction:row;
       flex-wrap:nowrap;
@@ -670,7 +671,9 @@
       overflow-y:hidden;
       -webkit-overflow-scrolling: touch;
     }
-    .recurring-block .rec-toggle{
+    .monthday-grid{flex-wrap:wrap; overflow:visible;}
+    .recurring-block .rec-toggle,
+    .rec-toggle{
       display:inline-flex;
       align-items:center;
       justify-content:center;
@@ -684,7 +687,8 @@
       position:relative;
       cursor:pointer;
     }
-    .recurring-block .rec-toggle input{
+    .recurring-block .rec-toggle input,
+    .rec-toggle input{
       position:absolute;
       opacity:0;
       width:1px;
@@ -697,7 +701,8 @@
       color: var(--text);
       white-space:nowrap;
     }
-    .recurring-block .rec-toggle input:checked + .rec-label{
+    .recurring-block .rec-toggle input:checked + .rec-label,
+    .rec-toggle input:checked + .rec-label{
       color:#2d5fbd;
     }
     .dept-toggle{
