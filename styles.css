@@ -1607,11 +1607,30 @@
       align-items:center;
       justify-content:space-between;
       gap:8px;
+      padding:6px 10px;
+      border-radius:10px;
+      border:1px dashed rgba(110,168,254,.45);
+      background: linear-gradient(90deg, rgba(110,168,254,.18), rgba(255,255,255,0));
       font-weight:900;
       font-size:11px;
-      color: var(--muted);
+      color: var(--text);
       text-transform:uppercase;
-      letter-spacing:.5px;
+      letter-spacing:.6px;
+    }
+    .plan-item-index{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:22px;
+      height:18px;
+      padding:0 6px;
+      margin-right:6px;
+      border-radius:999px;
+      border:1px solid rgba(150,170,205,.55);
+      background: rgba(255,255,255,.9);
+      font-size:10px;
+      font-weight:900;
+      color: var(--muted);
     }
     .plan-dept-list{margin-top:6px;}
     .task-sheet-compact{display:flex;flex-direction:column;gap:8px;}
@@ -1757,6 +1776,15 @@
     body.theme-dark .plan-dept-group{
       background: rgba(17,19,26,.85);
       border-color: rgba(35,42,58,.8);
+    }
+    body.theme-dark .plan-dept-head{
+      border-color: rgba(110,168,254,.4);
+      background: linear-gradient(90deg, rgba(110,168,254,.2), rgba(17,19,26,0));
+    }
+    body.theme-dark .plan-item-index{
+      background: rgba(21,25,37,.85);
+      border-color: rgba(35,42,58,.85);
+      color: var(--muted);
     }
     body.theme-dark input,
     body.theme-dark select,

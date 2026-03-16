@@ -1742,15 +1742,32 @@ const root = document.getElementById("root");
 const modal = document.getElementById("modal");
 const sheetTitle = document.getElementById("sheetTitle");
 const sheetBody = document.getElementById("sheetBody");
+let _sheetStack = [];
+let _sheetStackOn = false;
 document.getElementById("sheetClose").addEventListener("click", ()=>hideSheet());
 modal.addEventListener("click", (e)=>{ if(e.target === modal) hideSheet(); });
 
-function showSheet(title, html){
+function showSheet(title, html, opts={}){
+  const useStack = !!opts.stack || _sheetStackOn;
+  if(useStack && modal.classList.contains("show")){
+    _sheetStack.push({title: sheetTitle.textContent, html: sheetBody.innerHTML});
+    _sheetStackOn = true;
+  }
   sheetTitle.textContent = title;
   sheetBody.innerHTML = html;
   modal.classList.add("show");
 }
 function hideSheet(){
+  if(_sheetStackOn && _sheetStack.length){
+    const prev = _sheetStack.pop();
+    sheetTitle.textContent = prev.title;
+    sheetBody.innerHTML = prev.html;
+    modal.classList.add("show");
+    if(_sheetStack.length === 0) _sheetStackOn = false;
+    return;
+  }
+  _sheetStackOn = false;
+  _sheetStack = [];
   modal.classList.remove("show");
   sheetBody.innerHTML = "";
 }
@@ -3777,6 +3794,9 @@ function openPlanCreateTaskFromPicker(dateStr){
   }
   openPlanCreateTask(dateStr, deptId);
 }
+function openTaskFromPlanDay(taskId){
+  openTask(taskId, {stack:true});
+}
 function openPlanDayReporting(dateStr){
   const monthStr = dateStr.slice(0,7);
   const occ = getReportPlanOccurrences(monthStr).filter(o=>o.date===dateStr);
@@ -3792,7 +3812,7 @@ function openPlanDayReporting(dateStr){
     const closePill = (o.task && o.task.status==="закрито" && o.closeDate)
       ? `<span class="pill mono">${fmtDate(o.closeDate)}</span>`
       : ``;
-    const openAttr = o.task ? `data-action="openTask" data-arg1="${o.task.id}"` : "";
+    const openAttr = o.task ? `data-action="openTaskFromPlanDay" data-arg1="${o.task.id}"` : "";
     const cursor = o.task ? "" : "cursor:default;";
     return `
       <div class="item" ${openAttr} style="${cursor}">
@@ -3880,15 +3900,15 @@ function openPlanDayTasks(dateStr){
     const dept = (key === "personal") ? null : getDeptById(key);
     const deptName = (key === "personal") ? "Особисто" : (dept?.name || "Відділ");
     const addBtn = (canCreate && key !== "personal") ? `<button class="btn ghost btn-mini" data-action="openPlanCreateTask" data-arg1="${dateStr}" data-arg2="${key}">＋ Додати</button>` : ``;
-    const items = listTasks.map(t=>{
+    const items = listTasks.map((t, idx)=>{
       const statusBadge = `<span class="badge ${statusBadgeClass(t.status)}">${statusIcon(t.status)} ${htmlesc(statusLabel(t.status))}</span>`;
       const time = splitDateTime(t.dueDate).time || "";
       const timePill = time ? `<span class="pill mono">${htmlesc(time)}</span>` : ``;
       return `
-        <div class="item" data-action="openTask" data-arg1="${t.id}">
+        <div class="item" data-action="openTaskFromPlanDay" data-arg1="${t.id}">
           <div class="row">
             <div>
-              <div class="name">${htmlesc(t.title || t.id)}</div>
+              <div class="name"><span class="plan-item-index">${idx + 1}.</span> ${htmlesc(t.title || t.id)}</div>
               <div class="sub">
                 ${statusBadge}
                 ${timePill}
@@ -5770,7 +5790,7 @@ function applyControlDate(taskId){
   showToast(toast, "info");
 }
 
-function openTask(taskId){
+function openTask(taskId, opts={}){
   const u = currentSessionUser();
   const t = STATE.tasks.find(x=>x.id===taskId);
   if(!t) return;
@@ -5889,7 +5909,7 @@ function openTask(taskId){
         ? `<button class="btn primary" data-action="hideSheet">OK</button>`
         : (quickActionsForTask(u, t) || `<button class="btn primary" data-action="hideSheet">Закрити</button>`)
     }
-  `);
+  `, opts);
 }
 
 function openQuickActions(taskId){
@@ -7811,6 +7831,7 @@ const ACTIONS = {
   openPlanDay,
   openPlanCreateTask,
   openPlanCreateTaskFromPicker,
+  openTaskFromPlanDay,
   openReportStatusTasks,
   openQuickActions,
   openMyTasks,
