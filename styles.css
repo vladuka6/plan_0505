@@ -1545,6 +1545,53 @@
       font-size:11px;
       color:var(--muted);
     }
+    .cal-grid{
+      display:grid;
+      grid-template-columns: repeat(7, minmax(0,1fr));
+      gap:6px;
+      margin-top:10px;
+    }
+    .cal-head{
+      text-align:center;
+      font-size:11px;
+      font-weight:900;
+      color:var(--muted);
+      padding:4px 0;
+    }
+    .cal-cell{
+      background: rgba(255,255,255,.75);
+      border:1px solid rgba(150,170,205,.25);
+      border-radius:10px;
+      padding:6px;
+      min-height:74px;
+      cursor:pointer;
+    }
+    .cal-cell.is-out{
+      background: rgba(255,255,255,.4);
+      border-color: transparent;
+      cursor:default;
+    }
+    .cal-cell.is-today{
+      border-color: rgba(110,168,254,.8);
+      box-shadow: 0 0 0 1px rgba(110,168,254,.25);
+    }
+    .cal-day{
+      font-weight:900;
+      font-size:12px;
+      color:var(--text);
+    }
+    .cal-badges{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      margin-top:6px;
+      font-size:11px;
+    }
+    .cal-badges .pill{
+      padding:2px 6px;
+      font-size:10px;
+      align-self:flex-start;
+    }
     .task-sheet-compact{display:flex;flex-direction:column;gap:8px;}
     .task-sheet-compact .task-meta{margin-top:6px;}
     .task-sheet-compact .task-title .name{font-weight:900;}
@@ -1724,6 +1771,14 @@
     body.theme-dark .analytics-bar-wrap{ background: rgba(35,42,58,.7); }
     body.theme-dark .analytics-value,
     body.theme-dark .analytics-label{ color: var(--muted); }
+    body.theme-dark .cal-cell{
+      background: rgba(21,25,37,.55);
+      border-color: rgba(35,42,58,.75);
+    }
+    body.theme-dark .cal-cell.is-out{
+      background: rgba(21,25,37,.35);
+      border-color: transparent;
+    }
     body.theme-dark .token-type-managerial{
       border-color: rgba(110,168,254,.45);
       background: rgba(110,168,254,.18);
