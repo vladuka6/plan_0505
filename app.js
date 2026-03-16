@@ -113,6 +113,7 @@ function migrateState(st){
     deptSummaries: Array.isArray(st.deptSummaries) ? st.deptSummaries : [],
     weeklyTasks: Array.isArray(st.weeklyTasks) ? st.weeklyTasks : [],
     recurringTemplates: Array.isArray(st.recurringTemplates) ? st.recurringTemplates : [],
+    reportPlans: Array.isArray(st.reportPlans) ? st.reportPlans : [],
     sync: (st.sync && typeof st.sync === "object") ? st.sync : null,
   };
   if(Array.isArray(next.users)){
@@ -125,6 +126,9 @@ function migrateState(st){
 
   if(next.version < 4){
     next.version = 4;
+  }
+  if(next.version < 5){
+    next.version = 5;
   }
   if(Array.isArray(next.departments) && next.departments.length){
     const deptMap = {
@@ -345,6 +349,59 @@ function runRecurringTemplates(){
     }, tpl.createdBy || "u_boss");
   });
 }
+function daysInMonth(monthStr){
+  const [y,m] = (monthStr || "").split("-").map(Number);
+  if(!y || !m) return 30;
+  return new Date(y, m, 0).getDate();
+}
+function reportPlanDateForMonth(dayOfMonth, monthStr){
+  const day = Math.max(1, Math.min(Number(dayOfMonth) || 1, daysInMonth(monthStr)));
+  return `${monthStr}-${String(day).padStart(2,'0')}`;
+}
+function runReportPlans(){
+  if(!STATE.reportPlans) STATE.reportPlans = [];
+  const today = kyivDateStr();
+  const monthStr = today.slice(0,7);
+
+  STATE.reportPlans.forEach(plan=>{
+    const day = Number(plan?.dayOfMonth);
+    if(!Number.isFinite(day) || day < 1) return;
+    const scheduledDate = reportPlanDateForMonth(day, monthStr);
+    if(today < scheduledDate) return;
+
+    const deptIds = Array.isArray(plan.deptIds) ? plan.deptIds : [];
+    deptIds.forEach(deptId=>{
+      if(!deptId) return;
+      const exists = STATE.tasks.some(t=>
+        t.reportPlanId === plan.id &&
+        t.reportMonth === monthStr &&
+        t.departmentId === deptId
+      );
+      if(exists) return;
+      const headId = effectiveDeptHeadUserId(deptId);
+      const respId = headId || getDeptResponsibleOptions(deptId)[0]?.id || "u_boss";
+      createTask({
+        id: genTaskCode("I"),
+        type: "internal",
+        title: plan.title,
+        description: plan.description || "",
+        departmentId: deptId,
+        responsibleUserId: respId,
+        complexity: plan.complexity || "середня",
+        status: "в_процесі",
+        startDate: scheduledDate,
+        dueDate: scheduledDate,
+        nextControlDate: null,
+        controlAlways: false,
+        createdBy: plan.createdBy || "u_boss",
+        createdAt: nowIsoKyiv(),
+        updatedAt: nowIsoKyiv(),
+        reportPlanId: plan.id,
+        reportMonth: monthStr,
+      }, plan.createdBy || "u_boss");
+    });
+  });
+}
 function monthRangeFor(dateStr){
   const [y,m] = dateStr.split("-").map(Number);
   const from = `${y}-${String(m).padStart(2,'0')}-01`;
@@ -356,7 +413,7 @@ function monthRangeFor(dateStr){
 function seed(){
   const today = kyivDateStr();
   const st = {
-    version: 4,
+    version: 5,
     session: { userId: null },
     departments: [
       {id:"d1", name:"Відділ БАС", note:""},
@@ -384,6 +441,7 @@ function seed(){
     deptSummaries: [],
     weeklyTasks: [],
     recurringTemplates: [],
+    reportPlans: [],
   };
   saveState(st);
   return st;
@@ -1576,6 +1634,7 @@ const ROUTES = {
   REPORTS: "reports",
   TASKS: "tasks",
   ANALYTICS: "analytics",
+  REPORTING: "reporting",
   WEEKLY: "weekly",
   PROFILE: "profile",
 };
@@ -1600,6 +1659,7 @@ let UI = {
   analyticsShowDetails: false,
   reportFilter: "сьогодні",
   reportsControlDate: null, // NEW
+  reportingMonth: null,
   weeklyPeriodMode: "current",
   weeklyAnchorDate: null,
   weeklyMonth: null,
@@ -1991,6 +2051,7 @@ function viewControl(){
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
       {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+      {key:ROUTES.REPORTING, label:"Звітність", ico:"📑"},
     ]
     : [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
@@ -2822,6 +2883,156 @@ function submitReportNow(){
 }
 
 /* ===========================
+   REPORTING PLANS
+=========================== */
+function setReportingMonthFromInput(){
+  const input = document.getElementById("reportMonthInput");
+  if(!input || !input.value) return;
+  UI.reportingMonth = input.value;
+  render();
+}
+function renderReportPlanDeptChecks(selectedIds){
+  const selected = new Set(Array.isArray(selectedIds) ? selectedIds : []);
+  return STATE.departments.map(d=>`
+    <label class="check">
+      <input type="checkbox" name="rpDept" value="${d.id}" ${selected.has(d.id) ? "checked" : ""} />
+      ${htmlesc(d.name)}
+    </label>
+  `).join("");
+}
+function reportPlanFormHtml(plan=null){
+  const title = plan?.title || "";
+  const desc = plan?.description || "";
+  const day = Number(plan?.dayOfMonth) || 1;
+  const deptChecks = renderReportPlanDeptChecks(plan?.deptIds || []);
+  return `
+    <div class="field">
+      <label>Назва заходу</label>
+      <input id="rpTitle" value="${htmlesc(title)}" placeholder="Наприклад: Щомісячна нарада" />
+    </div>
+    <div class="field">
+      <div class="label-row">
+        <label>Опис (опційно)</label>
+        ${formatToolbar("rpDesc", "inline")}
+      </div>
+      <textarea id="rpDesc" placeholder="Деталі / очікуваний результат">${htmlesc(desc)}</textarea>
+    </div>
+    <div class="field">
+      <label>День місяця</label>
+      <input id="rpDay" type="number" min="1" max="31" value="${day}" />
+      <div class="hint">Якщо в місяці менше днів — ставимо на останній день.</div>
+    </div>
+    <div class="field">
+      <label>Відділи</label>
+      <div class="dept-multi">${deptChecks}</div>
+    </div>
+  `;
+}
+function openReportPlanCreate(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  showSheet("Новий захід (щомісяця)", `
+    ${reportPlanFormHtml()}
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="saveReportPlanNow">Створити</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function openReportPlanEdit(planId){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  const plan = STATE.reportPlans?.find(p=>p.id===planId);
+  if(!plan) return;
+  showSheet("Редагувати захід", `
+    ${reportPlanFormHtml(plan)}
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="saveReportPlanNow" data-arg1="${plan.id}">Зберегти</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function saveReportPlanNow(planId){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  const title = document.getElementById("rpTitle")?.value.trim();
+  if(!title){
+    showSheet("Помилка", `<div class="hint">Вкажи назву заходу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const day = Number(document.getElementById("rpDay")?.value || "");
+  if(!Number.isFinite(day) || day < 1 || day > 31){
+    showSheet("Помилка", `<div class="hint">Вкажи коректний день місяця (1–31).</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const deptIds = [...document.querySelectorAll('input[name="rpDept"]:checked')]
+    .map(x=>x.value)
+    .filter(Boolean);
+  if(!deptIds.length){
+    showSheet("Помилка", `<div class="hint">Обери хоча б один відділ.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  const desc = document.getElementById("rpDesc")?.value || "";
+  if(!STATE.reportPlans) STATE.reportPlans = [];
+
+  if(planId){
+    const idx = STATE.reportPlans.findIndex(p=>p.id===planId);
+    if(idx < 0) return;
+    const prev = STATE.reportPlans[idx];
+    STATE.reportPlans[idx] = {
+      ...prev,
+      title,
+      description: desc,
+      dayOfMonth: day,
+      deptIds: [...new Set(deptIds)],
+      updatedAt: nowIsoKyiv(),
+      updatedBy: u.id,
+    };
+  } else {
+    STATE.reportPlans.push({
+      id: uid("rp"),
+      title,
+      description: desc,
+      dayOfMonth: day,
+      deptIds: [...new Set(deptIds)],
+      createdBy: u.id,
+      createdAt: nowIsoKyiv(),
+      updatedAt: nowIsoKyiv(),
+    });
+  }
+
+  saveState(STATE);
+  hideSheet();
+  runReportPlans();
+  render();
+  showToast(planId ? "Зміни збережено" : "Захід додано", "ok");
+}
+function confirmDeleteReportPlan(planId){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  const plan = STATE.reportPlans?.find(p=>p.id===planId);
+  if(!plan) return;
+  showSheet("Видалити захід?", `
+    <div class="hint">“${htmlesc(plan.title)}” буде видалено з плану. Уже створені задачі залишаться в історії.</div>
+    <div class="sep"></div>
+    <div class="actions">
+      <button class="btn danger" data-action="deleteReportPlanNow" data-arg1="${plan.id}">Видалити</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+function deleteReportPlanNow(planId){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  if(!STATE.reportPlans) STATE.reportPlans = [];
+  STATE.reportPlans = STATE.reportPlans.filter(p=>p.id!==planId);
+  saveState(STATE);
+  hideSheet();
+  render();
+  showToast("Захід видалено", "ok");
+}
+
+/* ===========================
    REPORTS VIEW (UPDATED with Control Block for Boss)
 =========================== */
 function setReportFilter(k){ UI.reportFilter = k; render(); }
@@ -3016,6 +3227,7 @@ function viewReports(){
       {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+      {key:ROUTES.REPORTING, label:"Звітність", ico:"📑"},
     ]
     : [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
@@ -3112,6 +3324,160 @@ function openDeptSummary(summaryId){
     <div class="sep"></div>
     <button class="btn primary" data-action="hideSheet">Закрити</button>
   `);
+}
+
+/* ===========================
+   REPORTING (MONTHLY PLANS)
+=========================== */
+function viewReporting(){
+  if(!ensureLoggedIn()) return viewLogin();
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss"){
+    UI.tab = ROUTES.CONTROL;
+    return viewControl();
+  }
+
+  UI.tab = ROUTES.REPORTING;
+
+  const today = kyivDateStr();
+  const monthStr = UI.reportingMonth || today.slice(0,7);
+  UI.reportingMonth = monthStr;
+  const currentMonth = today.slice(0,7);
+
+  const plans = (STATE.reportPlans || []).slice().sort((a,b)=>{
+    const da = Number(a.dayOfMonth) || 0;
+    const db = Number(b.dayOfMonth) || 0;
+    if(da !== db) return da - db;
+    return (a.title || "").localeCompare(b.title || "");
+  });
+
+  const tasksForMonth = STATE.tasks.filter(t=>t.reportPlanId && t.reportMonth === monthStr);
+  const doneInMonth = tasksForMonth.filter(t=>{
+    if(t.status !== "закрито") return false;
+    const closeDate = getCloseDateForTask(t);
+    return closeDate && closeDate.startsWith(monthStr);
+  }).length;
+
+  const totalPlanned = plans.reduce((s,p)=>s + (Array.isArray(p.deptIds) ? p.deptIds.length : 0), 0);
+
+  const planList = plans.length ? plans.map(plan=>{
+    const deptIds = Array.isArray(plan.deptIds) ? plan.deptIds : [];
+    const scheduledDate = reportPlanDateForMonth(plan.dayOfMonth, monthStr);
+    const planTasks = tasksForMonth.filter(t=>t.reportPlanId===plan.id);
+    const tasksByDept = new Map(planTasks.map(t=>[t.departmentId, t]));
+    const closedInMonth = planTasks.filter(t=>{
+      if(t.status !== "закрито") return false;
+      const closeDate = getCloseDateForTask(t);
+      return closeDate && closeDate.startsWith(monthStr);
+    }).length;
+
+    const deptRows = deptIds.map(deptId=>{
+      const dept = getDeptById(deptId);
+      const task = tasksByDept.get(deptId) || null;
+      const closeDate = task ? getCloseDateForTask(task) : null;
+      const closedInMonth = !!(closeDate && closeDate.startsWith(monthStr));
+      const statusBadge = task
+        ? `<span class="badge ${statusBadgeClass(task.status)}">${statusIcon(task.status)} ${htmlesc(statusLabel(task.status))}</span>`
+        : `<span class="badge">Заплановано</span>`;
+      const taskDate = task?.dueDate ? (splitDateTime(task.dueDate).date || toDateOnly(task.dueDate)) : null;
+      const rowPlanDate = taskDate || scheduledDate;
+      const isPastMonth = monthStr < currentMonth;
+      const shouldExist = isPastMonth || ((monthStr === currentMonth) && (today >= scheduledDate));
+      const missingLabel = shouldExist ? "Не створено" : "Заплановано";
+      const statusBadgeFinal = task ? statusBadge : `<span class="badge">${missingLabel}</span>`;
+      const closePill = (task && task.status==="закрито" && closeDate)
+        ? `<span class="pill mono">${fmtDate(closeDate)}${closedInMonth ? "" : " (поза місяцем)"}</span>`
+        : ``;
+      const openAttr = task ? `data-action="openTask" data-arg1="${task.id}"` : "";
+      const cursor = task ? "" : "cursor:default;";
+
+      return `
+        <div class="item" ${openAttr} style="${cursor}">
+          <div class="row">
+            <div>
+              <div class="name">${deptBadgeHtml(dept)} ${htmlesc(dept?.name ?? "Відділ")}</div>
+              <div class="sub">
+                ${statusBadgeFinal}
+                <span class="pill">План: <span class="mono">${fmtDate(rowPlanDate)}</span></span>
+                ${closePill}
+              </div>
+            </div>
+            ${task ? `<div class="pill">›</div>` : ``}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    const desc = plan.description ? `<div class="hint rich-text" style="margin-top:10px;">${richText(plan.description)}</div>` : "";
+    const actions = u.readOnly ? "" : `
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn ghost" data-action="openReportPlanEdit" data-arg1="${plan.id}">Редагувати</button>
+        <button class="btn ghost" data-action="confirmDeleteReportPlan" data-arg1="${plan.id}">Видалити</button>
+      </div>
+    `;
+
+    return `
+      <div class="item" style="cursor:default;">
+        <div class="row">
+          <div>
+            <div class="name">${htmlesc(plan.title || "Без назви")}</div>
+            <div class="sub">
+              <span class="pill">День: <span class="mono">${Number(plan.dayOfMonth) || 1}</span></span>
+              <span class="pill mono">${fmtDate(scheduledDate)}</span>
+              <span class="pill">Відділів: <span class="mono">${deptIds.length}</span></span>
+              <span class="pill">Створено: <span class="mono">${planTasks.length}</span></span>
+              <span class="pill">Закрито в місяці: <span class="mono">${closedInMonth}</span></span>
+            </div>
+          </div>
+          ${actions}
+        </div>
+        ${desc}
+        ${deptIds.length ? `<div class="list" style="margin-top:10px;">${deptRows}</div>` : `<div class="hint">Відділи не вибрані.</div>`}
+      </div>
+    `;
+  }).join("") : `<div class="hint">Немає планових заходів. Додай перший через “＋”.</div>`;
+
+  const body = `
+    <div class="card">
+      <div class="card-h">
+        <div class="t">Звітність</div>
+        <span class="badge b-blue mono">${plans.length}</span>
+      </div>
+      <div class="card-b">
+        <div class="field">
+          <label>Звітний місяць</label>
+          <input type="month" id="reportMonthInput" value="${monthStr}" data-change="setReportingMonthFromInput" />
+        </div>
+
+        <div class="item" style="cursor:default;">
+          <div class="row">
+            <div class="name">Підсумок за місяць</div>
+            <span class="badge b-blue mono">${totalPlanned}</span>
+          </div>
+          <div class="sub">
+            <span class="pill">Створено задач: <span class="mono">${tasksForMonth.length}</span></span>
+            <span class="pill">Закрито в місяці: <span class="mono">${doneInMonth}</span></span>
+          </div>
+        </div>
+
+        <div class="list">
+          ${planList}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const tabs = [
+    {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
+    {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
+    {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
+    {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+    {key:ROUTES.REPORTING, label:"Звітність", ico:"📑"},
+  ];
+
+  const subtitle = roleSubtitle(u);
+  const fabAction = ()=>openReportPlanCreate();
+  appShell({title:"Звітність", subtitle, bodyHtml: body, showFab: !u.readOnly, fabAction, tabs});
 }
 
 /* ===========================
@@ -3586,6 +3952,7 @@ function viewWeeklyTasks(){
     {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
     {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+    {key:ROUTES.REPORTING, label:"Звітність", ico:"📑"},
   ];
   const subtitle = roleSubtitle(u);
   appShell({title:"Тиждень", subtitle, bodyHtml: body, showFab:false, fabAction:null, tabs});
@@ -4263,6 +4630,7 @@ function viewTasks(){
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
       {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+      {key:ROUTES.REPORTING, label:"Звітність", ico:"📑"},
     ]
     : [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
@@ -6288,6 +6656,7 @@ function viewProfile(){
       {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
       {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
       {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+      {key:ROUTES.REPORTING, label:"Звітність", ico:"📑"},
     ]
     : [
       {key:ROUTES.CONTROL, label:"Контроль", ico:"🧭"},
@@ -6747,6 +7116,7 @@ function viewAnalytics(){
     {key:ROUTES.TASKS, label:"Задачі", ico:"📋"},
     {key:ROUTES.WEEKLY, label:"Тиждень", ico:"🗓"},
     {key:ROUTES.ANALYTICS, label:"Аналітика", ico:"📈"},
+    {key:ROUTES.REPORTING, label:"Звітність", ico:"📑"},
   ];
 
   appShell({title:"Аналітика", subtitle:"Керівник", bodyHtml: body, showFab:false, fabAction:null, tabs});
@@ -6778,7 +7148,8 @@ function openHelp(){
         🧭 Контроль: що критично сьогодні (не здали звіт, блокери, задачі на підтвердження).<br/>
         📝 Звіти: щоденні звіти виконавців та підсумки відділів.<br/>
         📋 Задачі: постановка, виконання, фільтри по статусах і відділах.<br/>
-        📈 Аналітика: динаміка закриття, топ проблем, середній час закриття, навантаження відділів.
+        📈 Аналітика: динаміка закриття, топ проблем, середній час закриття, навантаження відділів.<br/>
+        📑 Звітність: план щомісячних заходів по відділах і контроль виконання.
       </div>
     </div>
 
@@ -6863,6 +7234,11 @@ const ACTIONS = {
   openMissing,
   openReport,
   openReportForm,
+  openReportPlanCreate,
+  openReportPlanEdit,
+  saveReportPlanNow,
+  confirmDeleteReportPlan,
+  deleteReportPlanNow,
   openReportStatusTasks,
   openQuickActions,
   openMyTasks,
@@ -6915,6 +7291,7 @@ const CHANGE_ACTIONS = {
   refreshRespOptions,
   setTaskSearchFromInput,
   setReportsControlDateFromInput,
+  setReportingMonthFromInput,
   setWeeklyPeriodFromSelect,
   setWeeklyAnchorDateFromInput,
   setWeeklyMonthFromInput,
@@ -6948,6 +7325,11 @@ const READONLY_BLOCKED_ACTIONS = new Set([
   "openEditTask",
   "openMeetingRepeat",
   "openReportForm",
+  "openReportPlanCreate",
+  "openReportPlanEdit",
+  "saveReportPlanNow",
+  "confirmDeleteReportPlan",
+  "deleteReportPlanNow",
   "saveAnnouncementEdits",
   "saveDeptNoteNow",
   "saveTaskEdits",
@@ -7149,6 +7531,7 @@ function render(){
     return viewLogin();
   }
   runRecurringTemplates();
+  runReportPlans();
 
   if(UI.route === ROUTES.PROFILE) return viewProfile();
 
@@ -7157,6 +7540,7 @@ function render(){
   if(UI.tab === ROUTES.TASKS) return viewTasks();
   if(UI.tab === ROUTES.WEEKLY) return viewWeeklyTasks();
   if(UI.tab === ROUTES.ANALYTICS) return viewAnalytics();
+  if(UI.tab === ROUTES.REPORTING) return viewReporting();
 
   return viewControl();
 }
