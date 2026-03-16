@@ -3764,6 +3764,19 @@ function openPlanDay(dateStr, mode){
   if(mode === "tasks") return openPlanDayTasks(dateStr);
   return openPlanDayReporting(dateStr);
 }
+function openPlanCreateTask(dateStr, deptId=null){
+  if(!dateStr) return;
+  openCreateTask("internal", deptId || null, dateStr);
+}
+function openPlanCreateTaskFromPicker(dateStr){
+  const sel = document.getElementById("planAddDept");
+  const deptId = sel?.value || "";
+  if(!deptId){
+    showSheet("Помилка", `<div class="hint">Оберіть відділ.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+  openPlanCreateTask(dateStr, deptId);
+}
 function openPlanDayReporting(dateStr){
   const monthStr = dateStr.slice(0,7);
   const occ = getReportPlanOccurrences(monthStr).filter(o=>o.date===dateStr);
@@ -3806,35 +3819,100 @@ function openPlanDayTasks(dateStr){
   const u = currentSessionUser();
   const tasks = getVisibleTasksForUser(u)
     .filter(t=>!isAnnouncement(t))
+    .filter(t=>t.status!=="закрито" && t.status!=="скасовано")
     .filter(t=>{
       if(!t.dueDate) return false;
       const {date} = splitDateTime(t.dueDate);
       if(!date) return false;
       return date === dateStr;
     });
+  const {isDeptHeadLike} = asDeptRole(u);
+  const canCreate = !!u && !u.readOnly && (u.role==="boss" || isDeptHeadLike);
+  const deptOptions = canCreate
+    ? (u.role==="boss" ? STATE.departments : STATE.departments.filter(d=>d.id===u.departmentId))
+    : [];
+  const addBlock = canCreate ? `
+    <div class="plan-add">
+      <div class="row2" style="align-items:flex-end;">
+        <div class="field">
+          <label>Додати задачу для відділу</label>
+          <select id="planAddDept">
+            ${deptOptions.map(d=>`<option value="${d.id}">${htmlesc(d.name)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="btn primary" data-action="openPlanCreateTaskFromPicker" data-arg1="${dateStr}">＋ Додати</button>
+        </div>
+      </div>
+    </div>
+  ` : "";
   if(!tasks.length){
-    showSheet("Дедлайни на дату", `<div class="hint">Немає задач з дедлайном на <span class="mono">${fmtDate(dateStr)}</span>.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    showSheet("План задач на дату", `
+      ${addBlock}
+      <div class="hint">Немає активних задач на <span class="mono">${fmtDate(dateStr)}</span>.</div>
+      <div class="sep"></div>
+      <button class="btn primary" data-action="hideSheet">OK</button>
+    `);
     return;
   }
-  const list = tasks.map(t=>{
-    const statusBadge = `<span class="badge ${statusBadgeClass(t.status)}">${statusIcon(t.status)} ${htmlesc(statusLabel(t.status))}</span>`;
-    return `
-      <div class="item" data-action="openTask" data-arg1="${t.id}">
-        <div class="row">
-          <div>
-            <div class="name">${htmlesc(t.title || t.id)}</div>
-            <div class="sub">
-              ${statusBadge}
-              ${t.departmentId ? `<span class="pill">${htmlesc(getDeptById(t.departmentId)?.name || "")}</span>` : `<span class="pill">Особисто</span>`}
+  const groups = new Map();
+  tasks.forEach(t=>{
+    const key = t.departmentId || "personal";
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  });
+  const deptOrder = STATE.departments.map(d=>d.id);
+  const orderIndex = (key)=>{
+    if(key === "personal") return 1e9;
+    const idx = deptOrder.indexOf(key);
+    return idx === -1 ? 1e8 : idx;
+  };
+  const keys = [...groups.keys()].sort((a,b)=>orderIndex(a)-orderIndex(b));
+  const list = keys.map(key=>{
+    const listTasks = groups.get(key) || [];
+    listTasks.sort((a,b)=>{
+      const ta = splitDateTime(a.dueDate).time || "";
+      const tb = splitDateTime(b.dueDate).time || "";
+      if(ta !== tb) return ta.localeCompare(tb);
+      return (a.title || "").localeCompare(b.title || "");
+    });
+    const dept = (key === "personal") ? null : getDeptById(key);
+    const deptName = (key === "personal") ? "Особисто" : (dept?.name || "Відділ");
+    const addBtn = (canCreate && key !== "personal") ? `<button class="btn ghost btn-mini" data-action="openPlanCreateTask" data-arg1="${dateStr}" data-arg2="${key}">＋ Додати</button>` : ``;
+    const items = listTasks.map(t=>{
+      const statusBadge = `<span class="badge ${statusBadgeClass(t.status)}">${statusIcon(t.status)} ${htmlesc(statusLabel(t.status))}</span>`;
+      const time = splitDateTime(t.dueDate).time || "";
+      const timePill = time ? `<span class="pill mono">${htmlesc(time)}</span>` : ``;
+      return `
+        <div class="item" data-action="openTask" data-arg1="${t.id}">
+          <div class="row">
+            <div>
+              <div class="name">${htmlesc(t.title || t.id)}</div>
+              <div class="sub">
+                ${statusBadge}
+                ${timePill}
+                ${t.reportPlanId ? `<span class="pill">Звітність</span>` : ``}
+              </div>
             </div>
+            <div class="pill">›</div>
           </div>
-          <div class="pill">›</div>
         </div>
+      `;
+    }).join("");
+    return `
+      <div class="plan-dept-group">
+        <div class="plan-dept-head">
+          <div class="name">${htmlesc(deptName)}</div>
+          ${addBtn}
+        </div>
+        <div class="list plan-dept-list">${items}</div>
       </div>
     `;
   }).join("");
-  showSheet(`Дедлайни на ${fmtDate(dateStr)}`, `
-    <div class="list">${list}</div>
+  showSheet(`План задач на ${fmtDate(dateStr)}`, `
+    ${addBlock}
+    ${list}
     <div class="sep"></div>
     <button class="btn primary" data-action="hideSheet">Закрити</button>
   `);
@@ -6220,7 +6298,7 @@ function toggleDeptAll(){
   refreshRespOptions();
 }
 
-function openCreateTask(kind, preselectDeptId=null){
+function openCreateTask(kind, preselectDeptId=null, preselectDueDate=null){
   const u = currentSessionUser();
   const {isDeptHeadLike} = asDeptRole(u);
 
@@ -6430,6 +6508,10 @@ function openCreateTask(kind, preselectDeptId=null){
     </div>
   `);
 
+  if(preselectDueDate){
+    const dueInput = document.getElementById("tDue");
+    if(dueInput) dueInput.value = preselectDueDate;
+  }
   toggleNoDue();
   toggleRecurrenceEnabled();
   toggleRecurrenceType();
@@ -7727,6 +7809,8 @@ const ACTIONS = {
   confirmDeleteReportPlan,
   deleteReportPlanNow,
   openPlanDay,
+  openPlanCreateTask,
+  openPlanCreateTaskFromPicker,
   openReportStatusTasks,
   openQuickActions,
   openMyTasks,
@@ -7809,6 +7893,8 @@ const READONLY_BLOCKED_ACTIONS = new Set([
   "markMeetingAnnounced",
   "openCreateAnnouncement",
   "openCreateTask",
+  "openPlanCreateTask",
+  "openPlanCreateTaskFromPicker",
   "openDelegationCreate",
   "openDeptNote",
   "openDeptSummaryForm",
