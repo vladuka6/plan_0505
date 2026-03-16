@@ -1742,6 +1742,7 @@ const root = document.getElementById("root");
 const modal = document.getElementById("modal");
 const sheetTitle = document.getElementById("sheetTitle");
 const sheetBody = document.getElementById("sheetBody");
+const sheetEl = document.getElementById("sheet");
 let _sheetStack = [];
 let _sheetStackOn = false;
 document.getElementById("sheetClose").addEventListener("click", ()=>hideSheet());
@@ -1753,7 +1754,7 @@ function showSheet(title, html, opts={}){
     _sheetStack.push({
       title: sheetTitle.textContent,
       html: sheetBody.innerHTML,
-      scrollTop: sheetBody.scrollTop || 0
+      scrollTop: (sheetEl ? sheetEl.scrollTop : sheetBody.scrollTop) || 0
     });
     _sheetStackOn = true;
   }
@@ -1766,7 +1767,11 @@ function hideSheet(){
     const prev = _sheetStack.pop();
     sheetTitle.textContent = prev.title;
     sheetBody.innerHTML = prev.html;
-    sheetBody.scrollTop = prev.scrollTop || 0;
+    if(sheetEl){
+      sheetEl.scrollTop = prev.scrollTop || 0;
+    } else {
+      sheetBody.scrollTop = prev.scrollTop || 0;
+    }
     modal.classList.add("show");
     if(_sheetStack.length === 0) _sheetStackOn = false;
     return;
