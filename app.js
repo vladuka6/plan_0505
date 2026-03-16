@@ -3014,6 +3014,31 @@ function setReportingMonthFromInput(){
   if(!input || !input.value) return;
   UI.reportingMonth = input.value;
   render();
+  updateReportPlanDaysGrid(UI.reportingMonth);
+}
+function updateReportPlanDaysGrid(monthStr){
+  if(!modal.classList.contains("show")) return;
+  const grid = document.getElementById("rpDaysGrid");
+  if(!grid) return;
+  const selected = [...document.querySelectorAll('input[name="rpDay"]:checked')]
+    .map(x=>Number(x.value))
+    .filter(Number.isFinite);
+  const extraStored = (grid.dataset.extraDays || "")
+    .split(",")
+    .map(x=>Number(x))
+    .filter(Number.isFinite);
+  const allSelected = [...new Set([...selected, ...extraStored])];
+  const maxDays = daysInMonth(monthStr);
+  const visibleSelected = allSelected.filter(d=>d>=1 && d<=maxDays);
+  const extra = allSelected.filter(d=>d>maxDays);
+  grid.dataset.extraDays = extra.join(",");
+  const monthDays = Array.from({length:maxDays}, (_,i)=>i+1);
+  grid.innerHTML = monthDays.map(d=>`
+    <label class="rec-toggle">
+      <input type="checkbox" name="rpDay" value="${d}" ${visibleSelected.includes(d) ? "checked" : ""} />
+      <span class="rec-label">${d}</span>
+    </label>
+  `).join("");
 }
 function renderReportPlanDeptChecks(selectedIds){
   const selected = new Set(Array.isArray(selectedIds) ? selectedIds : []);
@@ -3031,13 +3056,15 @@ function renderReportPlanDeptChecks(selectedIds){
     </div>
   `;
 }
-function reportPlanFormHtml(plan=null){
+function reportPlanFormHtml(plan=null, monthStr=null){
   const title = plan?.title || "";
   const desc = plan?.description || "";
   const daySet = new Set(Array.isArray(plan?.daysOfMonth) ? plan.daysOfMonth : (Number.isFinite(Number(plan?.dayOfMonth)) ? [Number(plan.dayOfMonth)] : []));
   const weekSet = new Set(Array.isArray(plan?.weekDays) ? plan.weekDays : []);
   const deptChecks = renderReportPlanDeptChecks(plan?.deptIds || []);
-  const monthDays = Array.from({length:31}, (_,i)=>i+1);
+  const month = monthStr || UI.reportingMonth || kyivDateStr().slice(0,7);
+  const maxDays = daysInMonth(month);
+  const monthDays = Array.from({length:maxDays}, (_,i)=>i+1);
   const weekDays = [
     {v:1, label:"Пн"},
     {v:2, label:"Вт"},
@@ -3061,7 +3088,7 @@ function reportPlanFormHtml(plan=null){
     </div>
     <div class="field">
       <label>Дати місяця</label>
-      <div class="rec-toggle-grid monthday-grid">
+      <div id="rpDaysGrid" class="rec-toggle-grid monthday-grid">
         ${monthDays.map(d=>`
           <label class="rec-toggle">
             <input type="checkbox" name="rpDay" value="${d}" ${daySet.has(d) ? "checked" : ""} />
@@ -3092,7 +3119,7 @@ function openReportPlanCreate(){
   const u = currentSessionUser();
   if(!u || u.role!=="boss") return;
   showSheet("Новий захід (щомісяця)", `
-    ${reportPlanFormHtml()}
+    ${reportPlanFormHtml(null, UI.reportingMonth || kyivDateStr().slice(0,7))}
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="saveReportPlanNow">Створити</button>
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
@@ -3105,7 +3132,7 @@ function openReportPlanEdit(planId){
   const plan = STATE.reportPlans?.find(p=>p.id===planId);
   if(!plan) return;
   showSheet("Редагувати захід", `
-    ${reportPlanFormHtml(plan)}
+    ${reportPlanFormHtml(plan, UI.reportingMonth || kyivDateStr().slice(0,7))}
     <div class="actions" style="margin-top:14px;">
       <button class="btn primary" data-action="saveReportPlanNow" data-arg1="${plan.id}">Зберегти</button>
       <button class="btn ghost" data-action="hideSheet">Скасувати</button>
