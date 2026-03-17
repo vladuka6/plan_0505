@@ -8023,10 +8023,22 @@ async function pullSync(){
       return;
     }
     const data = await res.json();
-    if(!data || !data.state){
+    if(!data || !("state" in data)){
       _syncInFlight = false;
       _syncInitDone = true;
       if(!wasInitDone) render();
+      return;
+    }
+    if(data.state === null){
+      const isFirstSync = !_syncReady;
+      _syncReady = true;
+      _syncInitDone = true;
+      if(isFirstSync){
+        queueSync();
+        if(!wasInitDone) render();
+      }
+      _lastPullAt = nowIsoKyiv();
+      _syncInFlight = false;
       return;
     }
     const localUserId = STATE?.session?.userId || null;
