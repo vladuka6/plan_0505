@@ -8000,7 +8000,7 @@ async function pushSync(){
     const payload = { state: stateForSync(STATE) };
     const res = await fetch(SYNC_URL, {
       method: "PUT",
-      headers: {"Content-Type":"application/json"},
+      headers: {"Content-Type":"application/json", "X-Device-Id": getDeviceId()},
       credentials: "include",
       body: JSON.stringify(payload),
     });
@@ -8015,7 +8015,7 @@ async function pullSync(){
   _syncInFlight = true;
   const wasInitDone = _syncInitDone;
   try{
-    const res = await fetch(SYNC_URL, {credentials: "include"});
+    const res = await fetch(SYNC_URL, {credentials: "include", headers: {"X-Device-Id": getDeviceId()}});
     if(!res.ok){
       _syncInFlight = false;
       _syncInitDone = true;
