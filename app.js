@@ -1881,6 +1881,17 @@ function goProfile(){
   UI.route = ROUTES.PROFILE;
   render();
 }
+function openSyncLogin(){
+  if(!SYNC_URL) return;
+  let origin = "";
+  try{
+    origin = new URL(SYNC_URL, window.location.href).origin;
+  } catch{
+    origin = window.location.origin;
+  }
+  const redirect = encodeURIComponent(window.location.href);
+  window.location.href = `${origin}/cdn-cgi/access/login?redirect_url=${redirect}`;
+}
 
 function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
   const u = currentSessionUser();
@@ -1892,6 +1903,13 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
   const themeTitle = UI.theme === "dark" ? "Світла тема" : "Темна тема";
   const syncTitle = _syncReady ? "Дані завантажено" : (_syncInitDone ? "Дані не завантажено" : "Завантаження даних...");
   const syncDot = SYNC_URL ? `<span class="sync-dot ${_syncReady ? "ok" : "err"}" title="${syncTitle}"></span>` : ``;
+  const syncNeedsLogin = !!(SYNC_URL && _syncInitDone && !_syncReady);
+  const syncBanner = syncNeedsLogin ? `
+    <div class="banner sync-banner">
+      <div>Синхронізація недоступна — потрібен вхід</div>
+      <button class="btn ghost btn-mini" data-action="openSyncLogin">Увійти</button>
+    </div>
+  ` : "";
   const compactTasks = !!(u && u.role==="boss" && UI.tab===ROUTES.TASKS && UI.taskDeptFilter && !["all","personal"].includes(UI.taskDeptFilter));
   const scopeAll = !!(u && u.role==="boss" && UI.tab===ROUTES.TASKS && UI.taskDeptFilter==="all");
   const scopeDept = !!(u && UI.tab===ROUTES.TASKS && (u.role!=="boss" || (u.role==="boss" && UI.taskDeptFilter && !["all","personal"].includes(UI.taskDeptFilter))));
@@ -1920,6 +1938,7 @@ function appShell({title, subtitle, bodyHtml, showFab, fabAction, tabs}){
       </div>
 
       ${banner ? `<div class="banner"><div>${htmlesc(banner)}</div><div class="mono">${date}</div></div>` : ``}
+      ${syncBanner}
 
       <div class="content">${bodyHtml}</div>
 
@@ -7815,6 +7834,7 @@ const ACTIONS = {
   createAnnouncementNow,
   createTaskNow,
   goProfile,
+  openSyncLogin,
   hideSheet,
   logout,
   openAbout,
