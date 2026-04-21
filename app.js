@@ -371,23 +371,6 @@ function setWeeklyWeekIndexFromSelect(){
   UI.weeklyAnchorDate = weeks[Math.max(0, Math.min(w, weeks.length) - 1)] || kyivDateStr();
   render();
 }
-function recurringMatchesToday(tpl, today){
-  if(!tpl || !tpl.schedule) return false;
-  if(tpl.lastGenerated === today) return false;
-  if(tpl.schedule.type === "weekly"){
-    const day = new Date(today + "T12:00:00").getDay();
-    return Array.isArray(tpl.schedule.days) && tpl.schedule.days.includes(day);
-  }
-  if(tpl.schedule.type === "monthly"){
-    const day = Number(today.slice(8,10));
-    return Array.isArray(tpl.schedule.dates) && tpl.schedule.dates.includes(day);
-  }
-  return false;
-}
-function runRecurringTemplates(){
-  // Стару механіку повторюваних задач вимкнено: повторюваність ведеться тільки через "Звітність".
-  if(!STATE.recurringTemplates) STATE.recurringTemplates = [];
-}
 function daysInMonth(monthStr){
   const [y,m] = (monthStr || "").split("-").map(Number);
   if(!y || !m) return 30;
@@ -7050,8 +7033,6 @@ function openCreateTask(kind, preselectDeptId=null, preselectDueDate=null){
     `
   ) : metaBlock;
 
-  const recurringBlock = "";
-
   showSheet(
     kind==="managerial" ? "Нова управлінська задача" :
     kind==="internal" ? "Нова внутрішня задача" :
@@ -7070,8 +7051,6 @@ function openCreateTask(kind, preselectDeptId=null, preselectDueDate=null){
       <textarea id="tDesc" class="task-desc-input" placeholder="Деталі / очікуваний результат"></textarea>
     </div>
 
-    ${recurringBlock}
-
     ${deptBlock}
 
     <div class="actions" style="margin-top:14px;">
@@ -7085,8 +7064,6 @@ function openCreateTask(kind, preselectDeptId=null, preselectDueDate=null){
     if(dueInput) dueInput.value = preselectDueDate;
   }
   toggleNoDue();
-  toggleRecurrenceEnabled();
-  toggleRecurrenceType();
   if(!isPersonal){
     if(isManagerial){
       const multiToggles = [...document.querySelectorAll('input[name="tDeptMulti"]')];
@@ -7107,22 +7084,6 @@ function openCreateTask(kind, preselectDeptId=null, preselectDueDate=null){
     refreshRespOptions();
   }
 }
-function toggleRecurrenceEnabled(){
-  const enabled = document.getElementById("recEnabled")?.checked;
-  const block = document.getElementById("recBody");
-  if(block) block.classList.toggle("disabled", !enabled);
-}
-function toggleRecurrenceType(){
-  const type = document.querySelector('input[name="recType"]:checked')?.value || "weekly";
-  const weekly = document.getElementById("recWeekly");
-  const monthly = document.getElementById("recMonthly");
-  if(weekly) weekly.style.display = (type === "weekly") ? "block" : "none";
-  if(monthly) monthly.style.display = (type === "monthly") ? "block" : "none";
-  document.querySelectorAll(".rec-type-pill").forEach(el=>{
-    const val = el.querySelector('input')?.value;
-    el.classList.toggle("active", val === type);
-  });
-}
 
 function createTaskNow(kind){
   const u = currentSessionUser();
@@ -7139,9 +7100,8 @@ function createTaskNow(kind){
   const dueTimeVal = document.getElementById("tDueTime")?.value || "";
   const due = noDue ? null : joinDateTime(dueDateVal, dueTimeVal);
   const ctrl = (noDue && !ctrlAlways) ? (document.getElementById("tCtrl").value || null) : null;
-  const recEnabled = false;
 
-  if(!recEnabled && !noDue && !dueDateVal){
+  if(!noDue && !dueDateVal){
     showSheet("Помилка", `<div class="hint">Вкажи дедлайн або вибери “Без дедлайну”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
     return;
   }
@@ -7161,30 +7121,6 @@ function createTaskNow(kind){
     const opts = getDeptResponsibleOptions(deptId);
     return opts[0]?.id || "u_boss";
   };
-  let schedule = null;
-  if(recEnabled){
-    const recType = document.querySelector('input[name="recType"]:checked')?.value || "weekly";
-    if(recType === "weekly"){
-      const days = [...document.querySelectorAll('input[name="recDay"]:checked')]
-        .map(x=>Number(x.value))
-        .filter(n=>Number.isFinite(n));
-      if(!days.length){
-        showSheet("Помилка", `<div class="hint">Обери дні тижня.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
-        return;
-      }
-      schedule = {type:"weekly", days: [...new Set(days)]};
-    } else {
-      const raw = (document.getElementById("recDates")?.value || "");
-      const dates = raw.split(/[\s,;]+/).map(x=>Number(x)).filter(n=>n>=1 && n<=31);
-      const unique = [...new Set(dates)];
-      if(!unique.length){
-        showSheet("Помилка", `<div class="hint">Вкажи дати місяця (наприклад: 5, 15).</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
-        return;
-      }
-      schedule = {type:"monthly", dates: unique};
-    }
-  }
-
   if(kind==="personal"){
     departmentId = null;
     responsibleUserId = "u_boss";
@@ -7199,55 +7135,6 @@ function createTaskNow(kind){
       departmentId = selected[0];
       responsibleUserId = pickResponsibleForDept(selected[0]);
     } else {
-      if(recEnabled){
-        if(!STATE.recurringTemplates) STATE.recurringTemplates = [];
-        selected.forEach((deptIdSel)=>{
-          const tpl = {
-            id: uid("rt"),
-            type,
-            title,
-            description: desc,
-            departmentId: deptIdSel,
-            responsibleUserId: pickResponsibleForDept(deptIdSel),
-            complexity: cx,
-            noDue,
-            controlAlways: noDue ? !!ctrlAlways : false,
-            nextControlDate: (noDue && !ctrlAlways) ? ctrl : null,
-            schedule,
-            createdBy: u.id,
-            createdAt: nowIsoKyiv(),
-            lastGenerated: null,
-          };
-          STATE.recurringTemplates.push(tpl);
-          if(recurringMatchesToday(tpl, today)){
-            tpl.lastGenerated = today;
-            createTask({
-              id: genTaskCode(idPrefix),
-              type,
-              title,
-              description: desc,
-              departmentId: deptIdSel,
-              responsibleUserId: pickResponsibleForDept(deptIdSel),
-              complexity: cx,
-              status,
-              startDate: today,
-              dueDate: noDue ? null : today,
-              nextControlDate: (noDue && !ctrlAlways) ? ctrl : null,
-              controlAlways: noDue ? !!ctrlAlways : false,
-              createdBy: u.id,
-              createdAt: nowIsoKyiv(),
-              updatedAt: nowIsoKyiv()
-            }, u.id);
-          }
-        });
-        saveState(STATE);
-        hideSheet();
-        UI.tab = ROUTES.TASKS;
-        UI.taskFilter = "активні";
-        render();
-        showToast("Шаблони створено", "ok");
-        return;
-      }
       selected.forEach((deptIdSel)=>{
         const taskId = genTaskCode(idPrefix);
         createTask({
@@ -7278,55 +7165,6 @@ function createTaskNow(kind){
   } else {
     departmentId = document.getElementById("tDept").value;
     responsibleUserId = document.getElementById("tResp").value;
-  }
-
-  if(recEnabled){
-    if(!STATE.recurringTemplates) STATE.recurringTemplates = [];
-    const tpl = {
-      id: uid("rt"),
-      type,
-      title,
-      description: desc,
-      departmentId,
-      responsibleUserId,
-      complexity: cx,
-      noDue,
-      controlAlways: noDue ? !!ctrlAlways : false,
-      nextControlDate: (noDue && !ctrlAlways) ? ctrl : null,
-      schedule,
-      createdBy: u.id,
-      createdAt: nowIsoKyiv(),
-      lastGenerated: null,
-    };
-    STATE.recurringTemplates.push(tpl);
-    if(recurringMatchesToday(tpl, today)){
-      tpl.lastGenerated = today;
-      createTask({
-        id,
-        type,
-        title,
-        description: desc,
-        departmentId,
-        responsibleUserId,
-        complexity: cx,
-        status,
-        startDate: today,
-        dueDate: noDue ? null : today,
-        nextControlDate: (noDue && !ctrlAlways) ? ctrl : null,
-        controlAlways: noDue ? !!ctrlAlways : false,
-        createdBy: u.id,
-        createdAt: nowIsoKyiv(),
-        updatedAt: nowIsoKyiv()
-      }, u.id);
-    } else {
-      saveState(STATE);
-    }
-    hideSheet();
-    UI.tab = ROUTES.TASKS;
-    UI.taskFilter = "активні";
-    render();
-    showToast("Шаблон створено", "ok");
-    return;
   }
 
   createTask({
@@ -8449,8 +8287,6 @@ const CHANGE_ACTIONS = {
   setWeeklyMonthFromInput,
   setWeeklyWeekIndexFromSelect,
   toggleNoDue,
-  toggleRecurrenceEnabled,
-  toggleRecurrenceType,
   toggleCtrlAlways,
   toggleDeptAll,
 };
@@ -8696,7 +8532,6 @@ function render(){
     UI.route = ROUTES.LOGIN;
     return viewLogin();
   }
-  runRecurringTemplates();
   runReportPlans();
 
   if(UI.route === ROUTES.PROFILE) return viewProfile();
