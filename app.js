@@ -135,6 +135,9 @@ function migrateState(st){
   const tasks = dedupeTasksForDisplay(rawTasks.map(t=>{
     if(!t || typeof t !== "object") return t;
     const task = {...t};
+    if(!task.category && (task.audience === "staff" || task.audience === "meeting")){
+      task.category = "announcement";
+    }
     task.controlAlways = !!task.controlAlways;
     if(task.dueDate){
       task.nextControlDate = null;
@@ -162,7 +165,7 @@ function migrateState(st){
     dailyReports: Array.isArray(st.dailyReports) ? st.dailyReports : [],
     deptSummaries: Array.isArray(st.deptSummaries) ? st.deptSummaries : [],
     weeklyTasks: Array.isArray(st.weeklyTasks) ? st.weeklyTasks : [],
-    recurringTemplates: Array.isArray(st.recurringTemplates) ? st.recurringTemplates : [],
+    recurringTemplates: [],
     reportPlans: Array.isArray(st.reportPlans) ? st.reportPlans : [],
     sync: (st.sync && typeof st.sync === "object") ? st.sync : null,
   };
@@ -382,32 +385,8 @@ function recurringMatchesToday(tpl, today){
   return false;
 }
 function runRecurringTemplates(){
+  // Стару механіку повторюваних задач вимкнено: повторюваність ведеться тільки через "Звітність".
   if(!STATE.recurringTemplates) STATE.recurringTemplates = [];
-  const today = kyivDateStr();
-  STATE.recurringTemplates.forEach(tpl=>{
-    if(!recurringMatchesToday(tpl, today)) return;
-    tpl.lastGenerated = today;
-    const dueDate = tpl.noDue ? null : today;
-    const controlAlways = tpl.noDue ? !!tpl.controlAlways : false;
-    const nextControlDate = (tpl.noDue && !controlAlways) ? (tpl.nextControlDate || null) : null;
-    createTask({
-      id: genTaskCode((tpl.type==="managerial") ? "T" : (tpl.type==="internal" ? "I" : "P")),
-      type: tpl.type,
-      title: tpl.title,
-      description: tpl.description || "",
-      departmentId: tpl.departmentId || null,
-      responsibleUserId: tpl.responsibleUserId || "u_boss",
-      complexity: tpl.complexity || "середня",
-      status: "в_процесі",
-      startDate: today,
-      dueDate,
-      nextControlDate,
-      controlAlways,
-      createdBy: tpl.createdBy || "u_boss",
-      createdAt: nowIsoKyiv(),
-      updatedAt: nowIsoKyiv(),
-    }, tpl.createdBy || "u_boss");
-  });
 }
 function daysInMonth(monthStr){
   const [y,m] = (monthStr || "").split("-").map(Number);
@@ -653,6 +632,12 @@ function fmtDateShort(d){
   if(!d) return "—";
   const parts = fmtDate(d).split(".");
   return `${parts[0]}.${parts[1]}`;
+}
+function fmtMonthLong(monthStr){
+  const [year, month] = String(monthStr || "").split("-");
+  const monthNames = ["січень","лютий","березень","квітень","травень","червень","липень","серпень","вересень","жовтень","листопад","грудень"];
+  const monthIndex = Math.max(0, Math.min(11, Number(month || 1) - 1));
+  return `${monthNames[monthIndex]} ${year || ""}`.trim();
 }
 function splitDateTime(v){
   if(!v) return {date:"", time:""};
@@ -1122,7 +1107,7 @@ function taskTypeLabel(type){
   return type;
 }
 function isAnnouncement(t){
-  return !!t && t.category === "announcement";
+  return !!t && (t.category === "announcement" || t.audience === "staff" || t.audience === "meeting");
 }
 function announcementAudienceLabel(a){
   if(a === "meeting") return "Нарада";
@@ -1662,6 +1647,516 @@ function reportingExportRows(monthStr){
   });
   return rows;
 }
+
+function normalizeReportingImportHeader(value){
+  return String(value || "")
+    .toLowerCase()
+    .replace(/№/g, "no")
+    .replace(/[«»"'`]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function normalizeDeptNameForImport(value){
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[«»"'`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseReportingImportSchedule(value, monthStr){
+  const text = String(value || "").trim();
+  if(!text) return {daysOfMonth:[], weekDays:[]};
+
+  const weekdayMap = {
+    "пн": 1,
+    "вт": 2,
+    "ср": 3,
+    "чт": 4,
+    "чт.": 4,
+    "пт": 5,
+    "сб": 6,
+    "нд": 0,
+    "нд.": 0,
+  };
+  const [, month] = String(monthStr || "").split("-");
+  const monthNum = Number(month || 0);
+  const daysOfMonth = new Set();
+  const weekDays = new Set();
+
+  text
+    .split(/[,;\n]+/)
+    .map(x=>String(x || "").trim())
+    .filter(Boolean)
+    .forEach(token=>{
+      const wd = weekdayMap[token.toLowerCase().replace(/\.+$/,"")];
+      if(Number.isInteger(wd)){
+        weekDays.add(wd);
+        return;
+      }
+      const m = token.match(/^(\d{1,2})(?:\.(\d{1,2})(?:\.(\d{4}))?)?$/);
+      if(!m) return;
+      const day = Number(m[1]);
+      const tokenMonth = Number(m[2] || 0);
+      if(!(day >= 1 && day <= 31)) return;
+      if(tokenMonth && monthNum && tokenMonth !== monthNum) return;
+      daysOfMonth.add(day);
+    });
+
+  return {
+    daysOfMonth: Array.from(daysOfMonth).sort((a,b)=>a-b),
+    weekDays: Array.from(weekDays).sort((a,b)=>a-b),
+  };
+}
+
+function sameNumberSet(a, b){
+  const aa = [...new Set(Array.isArray(a) ? a.map(Number).filter(Number.isFinite) : [])].sort((x,y)=>x-y);
+  const bb = [...new Set(Array.isArray(b) ? b.map(Number).filter(Number.isFinite) : [])].sort((x,y)=>x-y);
+  if(aa.length !== bb.length) return false;
+  return aa.every((value, index)=>value === bb[index]);
+}
+
+function normalizeReportingDuplicateText(value){
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[«»"'`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function recurringTemplateMatchesDate(tpl, dateStr){
+  if(!tpl?.schedule || !dateStr) return false;
+  if(tpl.schedule.type === "monthly"){
+    const day = Number(String(dateStr).slice(8,10));
+    return Array.isArray(tpl.schedule.dates) && tpl.schedule.dates.map(Number).includes(day);
+  }
+  if(tpl.schedule.type === "weekly"){
+    const dayOfWeek = new Date(`${dateStr}T12:00:00`).getDay();
+    return Array.isArray(tpl.schedule.days) && tpl.schedule.days.map(Number).includes(dayOfWeek);
+  }
+  return false;
+}
+
+function recurringTemplateRunsInMonth(tpl, monthStr){
+  if(!tpl?.schedule || !monthStr) return false;
+  if(tpl.schedule.type === "monthly"){
+    return Array.isArray(tpl.schedule.dates) && tpl.schedule.dates.length > 0;
+  }
+  if(tpl.schedule.type === "weekly"){
+    return Array.isArray(tpl.schedule.days) && tpl.schedule.days.length > 0;
+  }
+  return false;
+}
+
+function findReportingRecurringDuplicates(){
+  const monthStr = UI.reportingMonth || kyivDateStr().slice(0,7);
+  const reportingDeptIds = new Set(
+    (STATE.reportPlans || [])
+      .filter(plan=>reportPlanScheduleDates(plan, monthStr).length > 0)
+      .flatMap(plan=>Array.isArray(plan.deptIds) ? plan.deptIds : [])
+      .filter(Boolean)
+  );
+  const affectedDeptIds = new Set();
+
+  const duplicateTaskIds = new Set();
+  const duplicateTaskItems = [];
+  STATE.tasks.forEach(task=>{
+    if(!task || task.reportPlanId) return;
+    if(task.type !== "internal") return;
+    if(!task.departmentId || !reportingDeptIds.has(task.departmentId)) return;
+    const date = reportPlanTaskDate(task);
+    if(!date || !String(date).startsWith(monthStr)) return;
+    affectedDeptIds.add(task.departmentId);
+    duplicateTaskIds.add(task.id);
+    duplicateTaskItems.push({
+      id: task.id,
+      title: task.title,
+      date,
+      deptName: getDeptById(task.departmentId)?.name || "—",
+    });
+  });
+
+  const duplicateTemplateIds = new Set();
+  const duplicateTemplateItems = [];
+  (STATE.recurringTemplates || []).forEach(tpl=>{
+    if(!tpl || tpl.type !== "internal") return;
+    if(!tpl.departmentId || !reportingDeptIds.has(tpl.departmentId)) return;
+    if(!recurringTemplateRunsInMonth(tpl, monthStr)) return;
+    affectedDeptIds.add(tpl.departmentId);
+    duplicateTemplateIds.add(tpl.id);
+    duplicateTemplateItems.push({
+      id: tpl.id,
+      title: tpl.title,
+      deptName: getDeptById(tpl.departmentId)?.name || "—",
+    });
+  });
+
+  return {
+    duplicateTaskIds: Array.from(duplicateTaskIds),
+    duplicateTemplateIds: Array.from(duplicateTemplateIds),
+    duplicateTaskItems,
+    duplicateTemplateItems,
+    affectedDeptNames: Array.from(affectedDeptIds)
+      .map(id=>getDeptById(id)?.name || id)
+      .sort((a,b)=>String(a).localeCompare(String(b), "uk")),
+  };
+}
+
+function openReportingDuplicatesCleanup(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  const result = findReportingRecurringDuplicates();
+  const monthStr = UI.reportingMonth || kyivDateStr().slice(0,7);
+  const taskPreview = result.duplicateTaskItems.slice(0, 8);
+  const tplPreview = result.duplicateTemplateItems.slice(0, 8);
+  showSheet("Очистити не-звітні задачі", `
+    <div class="hint">Для місяця <span class="mono">${htmlesc(fmtMonthLong(monthStr))}</span> залишимо тільки задачі зі “Звітності”, а решту внутрішніх задач і повторюваних шаблонів для цих відділів приберемо.</div>
+    <div class="list" style="margin-top:10px;">
+      <div class="item" style="cursor:default;"><div class="name">Не-звітних задач до видалення: <span class="mono">${result.duplicateTaskIds.length}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Повторюваних шаблонів до видалення: <span class="mono">${result.duplicateTemplateIds.length}</span></div></div>
+      ${result.affectedDeptNames.length ? `<div class="item" style="cursor:default;"><div class="name">Відділи, яких торкнеться очищення</div><div class="sub">${htmlesc(result.affectedDeptNames.join(", "))}</div></div>` : ``}
+    </div>
+    ${taskPreview.length ? `
+      <div class="sep"></div>
+      <div class="name">Приклади задач</div>
+      <div class="list" style="margin-top:10px;">
+        ${taskPreview.map(item=>`
+          <div class="item" style="cursor:default;">
+            <div class="name">${htmlesc(item.title)}</div>
+            <div class="sub">${htmlesc(item.deptName)} • <span class="mono">${fmtDate(item.date)}</span></div>
+          </div>
+        `).join("")}
+      </div>
+    ` : ``}
+    ${tplPreview.length ? `
+      <div class="sep"></div>
+      <div class="name">Приклади шаблонів</div>
+      <div class="list" style="margin-top:10px;">
+        ${tplPreview.map(item=>`
+          <div class="item" style="cursor:default;">
+            <div class="name">${htmlesc(item.title)}</div>
+            <div class="sub">${htmlesc(item.deptName)}</div>
+          </div>
+        `).join("")}
+      </div>
+    ` : ``}
+    <div class="sep"></div>
+    <div class="actions">
+      <button class="btn danger" data-action="applyReportingDuplicatesCleanupNow">Очистити місяць від не-звітних</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+
+function applyReportingDuplicatesCleanupNow(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  const result = findReportingRecurringDuplicates();
+  const taskIdSet = new Set(result.duplicateTaskIds);
+  const templateIdSet = new Set(result.duplicateTemplateIds);
+
+  if(!taskIdSet.size && !templateIdSet.size){
+    showSheet("Очистити не-звітні задачі", `<div class="hint">Для цього звітного місяця не-звітних задач або шаблонів не знайдено.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  STATE.tasks = STATE.tasks.filter(task=>!taskIdSet.has(task.id));
+  STATE.taskUpdates = STATE.taskUpdates.filter(update=>!taskIdSet.has(update.taskId));
+  STATE.recurringTemplates = (STATE.recurringTemplates || []).filter(tpl=>!templateIdSet.has(tpl.id));
+  saveState(STATE);
+  render();
+  showSheet("Очистити не-звітні задачі", `
+    <div class="hint">Очищення завершено.</div>
+    <div class="list" style="margin-top:10px;">
+      <div class="item" style="cursor:default;"><div class="name">Видалено не-звітних задач: <span class="mono">${taskIdSet.size}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Видалено повторюваних шаблонів: <span class="mono">${templateIdSet.size}</span></div></div>
+    </div>
+    <div class="sep"></div>
+    <button class="btn primary" data-action="hideSheet">OK</button>
+  `);
+}
+
+async function handleReportingExcelImport(file){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  if(!file) return;
+  if(typeof XLSX === "undefined" || !XLSX.read){
+    showSheet("Імпорт Excel", `<div class="hint">Бібліотека Excel ще не завантажилась. Онови сторінку і спробуй ще раз.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return;
+  }
+
+  const preview = await parseReportingExcelFile(file);
+  if(!preview) return;
+  UI.reportingImportPreview = preview;
+  openReportingImportPreview();
+}
+
+async function parseReportingExcelFile(file){
+  const monthStr = UI.reportingMonth || kyivDateStr().slice(0,7);
+  const buffer = await file.arrayBuffer();
+  const wb = XLSX.read(buffer, {type:"array"});
+  const firstSheet = wb.Sheets?.[wb.SheetNames?.[0]];
+  if(!firstSheet){
+    showSheet("Імпорт Excel", `<div class="hint">Не вдалося прочитати першу вкладку файлу.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return null;
+  }
+
+  const rawRows = XLSX.utils.sheet_to_json(firstSheet, {header:1, defval:""});
+  const headerRowIndex = rawRows.findIndex(row=>{
+    const normalized = (Array.isArray(row) ? row : []).map(normalizeReportingImportHeader);
+    return normalized.includes("назвазаходу")
+      && normalized.includes("підстава")
+      && normalized.includes("звітування")
+      && normalized.includes("відділ");
+  });
+  if(headerRowIndex < 0){
+    showSheet("Імпорт Excel", `<div class="hint">Не знайшов у файлі шапку з колонками “Назва заходу / Підстава / Звітування / Відділ”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+    return null;
+  }
+
+  const headerRow = rawRows[headerRowIndex] || [];
+  const headerMap = new Map(headerRow.map((cell, index)=>[normalizeReportingImportHeader(cell), index]));
+  const titleIdx = headerMap.get("назвазаходу");
+  const basisIdx = headerMap.get("підстава");
+  const reportingIdx = headerMap.get("звітування");
+  const deptIdx = headerMap.get("відділ");
+
+  const deptLookup = new Map(
+    (STATE.departments || []).map(dept=>[
+      normalizeDeptNameForImport(dept.name),
+      dept.id
+    ])
+  );
+
+  const grouped = new Map();
+  const unknownDepts = new Set();
+  let skippedRows = 0;
+  let sourceRows = 0;
+
+  rawRows.slice(headerRowIndex + 1).forEach(row=>{
+    const cells = Array.isArray(row) ? row : [];
+    const title = String(cells[titleIdx] || "").trim();
+    const basis = String(cells[basisIdx] || "").trim();
+    const reporting = String(cells[reportingIdx] || "").trim();
+    const deptText = String(cells[deptIdx] || "").trim();
+    if(!title && !basis && !reporting && !deptText) return;
+    sourceRows += 1;
+    if(!title || !reporting || !deptText){
+      skippedRows += 1;
+      return;
+    }
+
+    const schedule = parseReportingImportSchedule(reporting, monthStr);
+    if(!schedule.daysOfMonth.length && !schedule.weekDays.length){
+      skippedRows += 1;
+      return;
+    }
+
+    const deptIds = deptText
+      .split(/[;\n]+/)
+      .map(x=>String(x || "").trim())
+      .filter(Boolean)
+      .map(name=>{
+        const id = deptLookup.get(normalizeDeptNameForImport(name));
+        if(!id) unknownDepts.add(name);
+        return id || null;
+      })
+      .filter(Boolean);
+
+    if(!deptIds.length){
+      skippedRows += 1;
+      return;
+    }
+
+    const key = [
+      title.toLowerCase(),
+      basis.toLowerCase(),
+      schedule.daysOfMonth.join(","),
+      schedule.weekDays.join(","),
+    ].join("||");
+
+    if(!grouped.has(key)){
+      grouped.set(key, {
+        title,
+        description: basis,
+        daysOfMonth: schedule.daysOfMonth,
+        weekDays: schedule.weekDays,
+        deptIds: new Set(),
+      });
+    }
+    deptIds.forEach(id=>grouped.get(key).deptIds.add(id));
+  });
+
+  const items = Array.from(grouped.values()).map(item=>({
+    ...item,
+    deptIds: Array.from(item.deptIds),
+  }));
+
+  const existingPlans = STATE.reportPlans || [];
+  let mergeWillCreate = 0;
+  let mergeWillUpdate = 0;
+  items.forEach(item=>{
+    const existing = existingPlans.find(plan=>
+      String(plan.title || "").trim().toLowerCase() === item.title.trim().toLowerCase()
+      && String(plan.description || "").trim().toLowerCase() === item.description.trim().toLowerCase()
+      && sameNumberSet(plan.daysOfMonth, item.daysOfMonth)
+      && sameNumberSet(plan.weekDays, item.weekDays)
+    );
+    if(existing) mergeWillUpdate += 1;
+    else mergeWillCreate += 1;
+  });
+
+  const previewRows = items.slice(0, 8).map(item=>{
+    const scheduleText = [
+      item.daysOfMonth.length ? item.daysOfMonth.map(d=>String(d).padStart(2,"0")).join(", ") : "",
+      item.weekDays.length ? item.weekDays.map(v=>["Нд","Пн","Вт","Ср","Чт","Пт","Сб"][v]).join(", ") : "",
+    ].filter(Boolean).join(" · ");
+    const deptText = item.deptIds.map(id=>getDeptById(id)?.name || id).join(", ");
+    return {title:item.title, basis:item.description, scheduleText, deptText};
+  });
+
+  const existingForMonth = existingPlans.filter(plan=>reportPlanScheduleDates(plan, monthStr).length > 0).length;
+
+  return {
+    monthStr,
+    fileName: file.name || "Excel",
+    sourceRows,
+    skippedRows,
+    unknownDepts: Array.from(unknownDepts),
+    items,
+    previewRows,
+    existingForMonth,
+    mergeWillCreate,
+    mergeWillUpdate,
+    replaceWillRemove: existingForMonth,
+    replaceWillCreate: items.length,
+  };
+}
+
+function openReportingImportPreview(){
+  const preview = UI.reportingImportPreview;
+  if(!preview) return;
+  const monthLabel = fmtMonthLong(preview.monthStr);
+  showSheet("Імпорт Excel у звітність", `
+    <div class="hint">Файл: <span class="mono">${htmlesc(preview.fileName)}</span></div>
+    <div class="list" style="margin-top:10px;">
+      <div class="item" style="cursor:default;"><div class="name">Місяць імпорту: <span class="mono">${htmlesc(monthLabel)}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Рядків у файлі: <span class="mono">${preview.sourceRows}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Після зшивки заходів: <span class="mono">${preview.items.length}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Пропущено рядків: <span class="mono">${preview.skippedRows}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Зараз у цьому місяці вже є заходів: <span class="mono">${preview.existingForMonth}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Якщо "Додати / оновити": буде створено <span class="mono">${preview.mergeWillCreate}</span>, буде оновлено <span class="mono">${preview.mergeWillUpdate}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Якщо "Замінити місяць": буде видалено <span class="mono">${preview.replaceWillRemove}</span>, буде створено <span class="mono">${preview.replaceWillCreate}</span></div></div>
+      ${preview.unknownDepts.length ? `<div class="item" style="cursor:default;"><div class="name">Невідомі відділи</div><div class="sub">${htmlesc(preview.unknownDepts.join(", "))}</div></div>` : ``}
+    </div>
+    <div class="sep"></div>
+    <div class="name">Попередній перегляд</div>
+    <div class="list" style="margin-top:10px;">
+      ${preview.previewRows.length ? preview.previewRows.map(row=>`
+        <div class="item" style="cursor:default;">
+          <div class="name">${htmlesc(row.title)}</div>
+          <div class="sub">${htmlesc(row.scheduleText || "—")} • ${htmlesc(row.deptText || "—")}</div>
+          ${row.basis ? `<div class="hint" style="margin-top:6px;">${htmlesc(shorten(row.basis, 140))}</div>` : ``}
+        </div>
+      `).join("") : `<div class="hint">Немає рядків для імпорту.</div>`}
+    </div>
+    <div class="sep"></div>
+    <div class="hint">"Додати / оновити" об'єднає дані з поточними заходами. "Замінити" видалить усі заходи, що мають події в місяці ${htmlesc(monthLabel)}, і завантажить файл заново.</div>
+    <div class="actions" style="margin-top:14px;">
+      <button class="btn primary" data-action="applyReportingImportMode" data-arg1="merge">Додати / оновити</button>
+      <button class="btn ghost" data-action="applyReportingImportMode" data-arg1="replace">Замінити місяць</button>
+      <button class="btn ghost" data-action="hideSheet">Скасувати</button>
+    </div>
+  `);
+}
+
+function applyReportingImportMode(mode="merge"){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  const preview = UI.reportingImportPreview;
+  if(!preview) return;
+  if(!STATE.reportPlans) STATE.reportPlans = [];
+
+  if(mode === "replace"){
+    STATE.reportPlans = STATE.reportPlans.filter(plan=>reportPlanScheduleDates(plan, preview.monthStr).length === 0);
+  }
+
+  let created = 0;
+  let updated = 0;
+
+  preview.items.forEach(item=>{
+    const existing = STATE.reportPlans.find(plan=>
+      String(plan.title || "").trim().toLowerCase() === item.title.trim().toLowerCase()
+      && String(plan.description || "").trim().toLowerCase() === item.description.trim().toLowerCase()
+      && sameNumberSet(plan.daysOfMonth, item.daysOfMonth)
+      && sameNumberSet(plan.weekDays, item.weekDays)
+    );
+
+    if(existing){
+      existing.deptIds = Array.from(new Set([...(existing.deptIds || []), ...(item.deptIds || [])]));
+      existing.updatedAt = nowIsoKyiv();
+      existing.updatedBy = u.id;
+      updated += 1;
+      return;
+    }
+
+    STATE.reportPlans.push({
+      id: uid("rp"),
+      title: item.title,
+      description: item.description,
+      daysOfMonth: item.daysOfMonth,
+      weekDays: item.weekDays,
+      deptIds: item.deptIds,
+      createdBy: u.id,
+      createdAt: nowIsoKyiv(),
+      updatedAt: nowIsoKyiv(),
+    });
+    created += 1;
+  });
+
+  UI.reportingImportPreview = null;
+  saveState(STATE);
+  runReportPlans();
+  render();
+  showSheet("Імпорт Excel у звітність", `
+    <div class="hint">Імпорт завершено.</div>
+    <div class="list" style="margin-top:10px;">
+      <div class="item" style="cursor:default;"><div class="name">Режим: <span class="mono">${mode === "replace" ? "замінити місяць" : "додати / оновити"}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Створено заходів: <span class="mono">${created}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Оновлено заходів: <span class="mono">${updated}</span></div></div>
+      <div class="item" style="cursor:default;"><div class="name">Пропущено рядків: <span class="mono">${preview.skippedRows}</span></div></div>
+    </div>
+    <div class="sep"></div>
+    <button class="btn primary" data-action="hideSheet">OK</button>
+  `);
+}
+
+function importReportingExcelNow(){
+  const u = currentSessionUser();
+  if(!u || u.role!=="boss") return;
+  let input = document.getElementById("reportingExcelInput");
+  if(!input){
+    input = document.createElement("input");
+    input.type = "file";
+    input.id = "reportingExcelInput";
+    input.accept = ".xlsx,.xls";
+    input.style.display = "none";
+    input.addEventListener("change", async (event)=>{
+      const file = event.target?.files?.[0];
+      try{
+        await handleReportingExcelImport(file);
+      } catch(err){
+        console.error(err);
+        showSheet("Імпорт Excel", `<div class="hint">Не вдалося імпортувати файл. Перевір формат таблиці.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
+      } finally {
+        event.target.value = "";
+      }
+    });
+    document.body.appendChild(input);
+  }
+  input.click();
+}
 function exportTasksExcelNow(){
   const from = document.getElementById("expFrom")?.value;
   const to = document.getElementById("expTo")?.value;
@@ -1901,6 +2396,7 @@ let UI = {
   weeklyAnchorDate: null,
   weeklyMonth: null,
   weeklyWeekIndex: 1,
+  reportingImportPreview: null,
   theme: loadTheme(),
 };
 function toggleTheme(){
@@ -2318,6 +2814,10 @@ function viewControl(){
   const subtitle = roleSubtitle(u);
   const fabAction = ()=>{
     if(u.role==="boss"){
+      if(showAnnouncementsScope && effectivePersonalFilter==="announcements"){
+        openCreateAnnouncement();
+        return;
+      }
       showSheet("Додати", `
         <div class="actions">
           <button class="btn primary" data-action="hideThen" data-next="openCreateTask" data-arg1="personal">➕ Моя задача</button>
@@ -3805,9 +4305,16 @@ function viewReporting(){
         <span class="badge b-blue mono">${plans.length}</span>
       </div>
       <div class="card-b">
-        <div class="field">
-          <label>Звітний місяць</label>
-          <input type="month" id="reportMonthInput" value="${monthStr}" data-change="setReportingMonthFromInput" />
+        <div class="row" style="align-items:end; gap:10px; flex-wrap:wrap; justify-content:space-between;">
+          <div class="field" style="min-width:220px; max-width:240px;">
+            <label>Звітний місяць</label>
+            <input type="month" id="reportMonthInput" value="${monthStr}" data-change="setReportingMonthFromInput" />
+          </div>
+          ${u.role==="boss" ? `
+            <div class="actions" style="margin:0 0 6px 0;">
+              <button class="btn ghost" data-action="importReportingExcelNow">⬆️ Імпорт Excel</button>
+            </div>
+          ` : ``}
         </div>
 
         <div class="item" style="cursor:default;">
@@ -6083,7 +6590,7 @@ function openEditTask(taskId){
         <label>Опис (опційно)</label>
         ${formatToolbar("tDesc", "inline")}
       </div>
-      <textarea id="tDesc">${htmlesc(t.description || "")}</textarea>
+      <textarea id="tDesc" class="task-desc-input">${htmlesc(t.description || "")}</textarea>
     </div>
 
     ${!isPersonal ? `
@@ -6543,55 +7050,7 @@ function openCreateTask(kind, preselectDeptId=null, preselectDueDate=null){
     `
   ) : metaBlock;
 
-  const recurringBlock = (u.role==="boss" && !u.readOnly) ? (()=>{
-    const days = [
-      {v:1, label:"Пн"},
-      {v:2, label:"Вт"},
-      {v:3, label:"Ср"},
-      {v:4, label:"Чт"},
-      {v:5, label:"Пт"},
-      {v:6, label:"Сб"},
-      {v:0, label:"Нд"},
-    ];
-    return `
-      <details class="recurring-block">
-        <summary>Повторення</summary>
-        <div class="field">
-          <div class="toggle-row">
-            <span class="toggle-label">Повторювана задача</span>
-            <label class="switch">
-              <input id="recEnabled" type="checkbox" data-change="toggleRecurrenceEnabled" />
-              <span class="slider"></span>
-            </label>
-          </div>
-        </div>
-        <div id="recBody" class="rec-body disabled">
-          <div class="rec-type-row">
-            <label class="rec-type-pill">
-              <input type="radio" name="recType" value="weekly" checked data-change="toggleRecurrenceType" />
-              <span>Щотижня</span>
-            </label>
-            <label class="rec-type-pill">
-              <input type="radio" name="recType" value="monthly" data-change="toggleRecurrenceType" />
-              <span>Щомісяця</span>
-            </label>
-          </div>
-          <div id="recWeekly" class="rec-toggle-grid">
-            ${days.map(d=>`
-              <label class="rec-toggle">
-                <input type="checkbox" name="recDay" value="${d.v}" />
-                <span class="rec-label">${d.label}</span>
-              </label>
-            `).join("")}
-          </div>
-          <div id="recMonthly" class="field" style="display:none;">
-            <label>Дати місяця (через кому)</label>
-            <input id="recDates" placeholder="5, 15" />
-          </div>
-        </div>
-      </details>
-    `;
-  })() : "";
+  const recurringBlock = "";
 
   showSheet(
     kind==="managerial" ? "Нова управлінська задача" :
@@ -6608,7 +7067,7 @@ function openCreateTask(kind, preselectDeptId=null, preselectDueDate=null){
         <label>Опис (опційно)</label>
         ${formatToolbar("tDesc", "inline")}
       </div>
-      <textarea id="tDesc" placeholder="Деталі / очікуваний результат"></textarea>
+      <textarea id="tDesc" class="task-desc-input" placeholder="Деталі / очікуваний результат"></textarea>
     </div>
 
     ${recurringBlock}
@@ -6680,7 +7139,7 @@ function createTaskNow(kind){
   const dueTimeVal = document.getElementById("tDueTime")?.value || "";
   const due = noDue ? null : joinDateTime(dueDateVal, dueTimeVal);
   const ctrl = (noDue && !ctrlAlways) ? (document.getElementById("tCtrl").value || null) : null;
-  const recEnabled = !!document.getElementById("recEnabled")?.checked;
+  const recEnabled = false;
 
   if(!recEnabled && !noDue && !dueDateVal){
     showSheet("Помилка", `<div class="hint">Вкажи дедлайн або вибери “Без дедлайну”.</div><div class="sep"></div><button class="btn primary" data-action="hideSheet">OK</button>`);
@@ -7919,6 +8378,10 @@ const ACTIONS = {
   openReportForm,
   openReportPlanCreate,
   openReportPlanEdit,
+  openReportingDuplicatesCleanup,
+  importReportingExcelNow,
+  applyReportingDuplicatesCleanupNow,
+  applyReportingImportMode,
   saveReportPlanNow,
   confirmDeleteReportPlan,
   deleteReportPlanNow,
